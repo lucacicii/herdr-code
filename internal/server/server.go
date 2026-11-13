@@ -193,6 +193,13 @@ func (s *Server) handleSPA(staticFS fs.FS) http.Handler {
 		}
 		if f, err := staticFS.Open(clean); err == nil {
 			_ = f.Close()
+			if strings.HasSuffix(clean, ".webmanifest") {
+				w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache")
+			} else if clean == "sw.js" {
+				w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache")
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}

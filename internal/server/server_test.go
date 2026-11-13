@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestOriginAndTokenAuthAndWorkspaceAPI(t *testing.T) {
@@ -82,5 +83,42 @@ func TestOriginAndTokenAuthAndWorkspaceAPI(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("read file expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPWAStaticHeaders(t *testing.T) {
+	staticFS := fstest.MapFS{
+		"index.html":           {Data: []byte("<html></html>")},
+		"manifest.webmanifest": {Data: []byte(`{"name":"herdr-code"}`)},
+		"sw.js":                {Data: []byte("self.addEventListener('fetch',()=>{});")},
+	}
+
+	srv := New(Config{
+		SocketPath: filepath.Join(t.TempDir(), "nonexistent.sock"),
+		StaticFS:   staticFS,
+		Version:    "test",
+	})
+	defer srv.Close()
+
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("manifest expected 200, got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/manifest+json") {
+		t.Fatalf("expected application/manifest+json, got %q", ct)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sw.js expected 200, got %d", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("expected sw.js Cache-Control=no-cache, got %q", cc)
 	}
 }

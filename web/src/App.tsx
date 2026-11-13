@@ -25,6 +25,11 @@ function makeId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 export function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('herdr_code_theme');
@@ -61,6 +66,7 @@ export function App() {
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [showNewTerminal, setShowNewTerminal] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   // Column widths in pixels (left fixed, right flex/px, center flex)
   const [leftWidth, setLeftWidth] = useState(260);
@@ -74,7 +80,27 @@ export function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('herdr_code_theme', theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#ffffff');
+    }
   }, [theme]);
+
+  useEffect(() => {
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
 
   const refreshData = useCallback(async () => {
     try {
@@ -418,6 +444,15 @@ export function App() {
         hcConnected={hcConnected}
         hcVersion={hcVersion}
         theme={theme}
+        canInstallPWA={Boolean(installPrompt)}
+        onInstallPWA={async () => {
+          if (!installPrompt) return;
+          await installPrompt.prompt();
+          const choice = await installPrompt.userChoice;
+          if (choice.outcome === 'accepted') {
+            setInstallPrompt(null);
+          }
+        }}
         onSelectWorkspace={setActiveWorkspaceId}
         onOpenAddWorkspace={() => setShowAddWorkspace(true)}
         onOpenQuickSearch={() => setShowQuickOpen(true)}

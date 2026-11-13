@@ -1,4 +1,5 @@
 import {
+  Download,
   FolderPlus,
   GitBranch,
   Moon,
@@ -16,6 +17,8 @@ interface TopBarProps {
   hcConnected: boolean;
   hcVersion?: string;
   theme: 'light' | 'dark';
+  canInstallPWA?: boolean;
+  onInstallPWA?: () => void;
   onSelectWorkspace: (id: string) => void;
   onOpenAddWorkspace: () => void;
   onOpenQuickSearch: () => void;
@@ -30,6 +33,8 @@ export function TopBar({
   hcConnected,
   hcVersion,
   theme,
+  canInstallPWA,
+  onInstallPWA,
   onSelectWorkspace,
   onOpenAddWorkspace,
   onOpenQuickSearch,
@@ -138,6 +143,17 @@ export function TopBar({
           <span className="status-dot" />
           <span>{hcConnected ? `hc ${hcVersion || 'ok'}` : 'hc offline'}</span>
         </span>
+
+        {canInstallPWA && onInstallPWA && (
+          <button
+            className="btn btn-sm"
+            onClick={onInstallPWA}
+            title="Install herdr-code as Desktop App"
+          >
+            <Download size={13} />
+            <span>Install</span>
+          </button>
+        )}
 
         <button
           className="btn btn-icon btn-ghost"
