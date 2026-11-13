@@ -1,0 +1,7 @@
+# Binaries & build outputs
+/bin/
+/herdr-code
+/web/dist/
+/web/node_modules/
+*.log
+.DS_Store
