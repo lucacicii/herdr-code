@@ -122,3 +122,36 @@ func TestPWAStaticHeaders(t *testing.T) {
 		t.Fatalf("expected sw.js Cache-Control=no-cache, got %q", cc)
 	}
 }
+
+func TestDependenciesEndpoints(t *testing.T) {
+	srv := New(Config{
+		SocketPath: filepath.Join(t.TempDir(), "nonexistent.sock"),
+		Version:    "test",
+	})
+	defer srv.Close()
+	h := srv.Handler()
+
+	// Check GET /api/settings/dependencies
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/dependencies", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var status DependenciesStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.OS == "" || status.HCDaemon.Running {
+		t.Fatalf("unexpected dependencies status: %+v", status)
+	}
+
+	// Unsupported target must return 400
+	req = httptest.NewRequest(http.MethodPost, "/api/settings/dependencies/install", strings.NewReader(`{"target":"rm -rf /"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid target, got %d", rec.Code)
+	}
+}

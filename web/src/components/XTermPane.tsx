@@ -15,6 +15,9 @@ export interface XTermPaneHandle {
 interface XTermPaneProps {
   terminal: TerminalInfo;
   theme: 'light' | 'dark';
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
   focused: boolean;
   onFocus: () => void;
   onOpenFileLine: (path: string, line: number) => void;
@@ -71,11 +74,12 @@ const DARK_XTERM_THEME = {
 const encoder = new TextEncoder();
 
 export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XTermPane(
-  { terminal, theme, focused, onFocus, onOpenFileLine, onPastePath },
+  { terminal, theme, fontFamily, fontSize, lineHeight, focused, onFocus, onOpenFileLine, onPastePath },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [connState, setConnState] = useState<'connecting' | 'open' | 'closed'>('connecting');
   const [dragOver, setDragOver] = useState(false);
@@ -105,24 +109,45 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
   }));
 
   useEffect(() => {
-    if (termRef.current) {
-      termRef.current.options.theme = theme === 'dark' ? DARK_XTERM_THEME : LIGHT_XTERM_THEME;
-    }
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = theme === 'dark' ? DARK_XTERM_THEME : LIGHT_XTERM_THEME;
   }, [theme]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (!term) return;
+    term.options.fontFamily = fontFamily;
+    term.options.fontSize = fontSize;
+    term.options.lineHeight = lineHeight;
+    if (fitAddon) {
+      try {
+        fitAddon.fit();
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        }
+      } catch {
+        // ignore resize errors
+      }
+    }
+  }, [fontFamily, fontSize, lineHeight]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const term = new Terminal({
-      fontFamily: 'var(--font-mono)',
-      fontSize: 12.5,
-      lineHeight: 1.35,
+      fontFamily,
+      fontSize,
+      lineHeight,
       cursorBlink: true,
       scrollback: 5000,
       theme: theme === 'dark' ? DARK_XTERM_THEME : LIGHT_XTERM_THEME,
     });
     const fitAddon = new FitAddon();
+    fitAddonRef.current = fitAddon;
     const linksAddon = new WebLinksAddon();
 
     term.loadAddon(fitAddon);
@@ -227,6 +252,7 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
       socket.close();
       term.dispose();
       termRef.current = null;
+      fitAddonRef.current = null;
       wsRef.current = null;
     };
   }, [terminal.address]);

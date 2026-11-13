@@ -1,4 +1,4 @@
-import { AtSign, FileCode2, GitCompare, Search, X } from 'lucide-react';
+import { AtSign, FileCode2, GitCompare, PanelRightClose, Search, X } from 'lucide-react';
 import { CodeMirrorViewer } from './CodeMirrorViewer';
 import { DiffViewer } from './DiffViewer';
 import type { CenterTab, DiffHunk, FileContent, FileDiff } from '../types/api';
@@ -13,6 +13,7 @@ interface CenterCodePaneProps {
   theme: 'light' | 'dark';
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onCollapse?: () => void;
   onOpenQuickSearch: () => void;
   onAddFileRef: (path: string) => void;
   onAddLineRef: (path: string, startLine: number, endLine: number) => void;
@@ -38,6 +39,7 @@ export function CenterCodePane({
   theme,
   onSelectTab,
   onCloseTab,
+  onCollapse,
   onOpenQuickSearch,
   onAddFileRef,
   onAddLineRef,
@@ -116,16 +118,28 @@ export function CenterCodePane({
           })}
         </div>
 
-        {activeTab && activeTab.kind === 'code' && (
-          <button
-            className="btn btn-sm"
-            onClick={() => onAddFileRef(activeTab.path)}
-            title={`Reference @${activeTab.path}`}
-          >
-            <AtSign size={11} />
-            <span>Ref File</span>
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          {activeTab && activeTab.kind === 'code' && (
+            <button
+              className="btn btn-sm"
+              onClick={() => onAddFileRef(activeTab.path)}
+              title={`Reference @${activeTab.path}`}
+            >
+              <AtSign size={11} />
+              <span>Ref File</span>
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              className="btn btn-icon btn-sm btn-ghost"
+              onClick={onCollapse}
+              title="Hide Code Panel"
+              aria-label="Hide Code Panel"
+            >
+              <PanelRightClose size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {!activeTab ? (

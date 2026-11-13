@@ -161,11 +161,15 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/workspaces/{id}/git/hunk", s.authJSON(s.handleGitHunk))
 
 	// Terminals & templates
+	s.mux.HandleFunc("GET /api/herdr/spaces", s.authJSON(s.handleHerdrSpaces))
+	s.mux.HandleFunc("GET /api/settings/dependencies", s.authJSON(s.handleGetDependencies))
+	s.mux.HandleFunc("POST /api/settings/dependencies/install", s.authJSON(s.handleInstallDependency))
 	s.mux.HandleFunc("GET /api/templates", s.authJSON(s.handleListTemplates))
 	s.mux.HandleFunc("GET /api/terminals", s.authJSON(s.handleListTerminals))
 	s.mux.HandleFunc("POST /api/terminals", s.authJSON(s.handleCreateTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/send", s.authJSON(s.handleSendTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/keys", s.authJSON(s.handleKeysTerminal))
+	s.mux.HandleFunc("POST /api/terminals/{id}/label", s.authJSON(s.handleLabelTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/interrupt", s.authJSON(s.handleInterruptTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/kill", s.authJSON(s.handleKillTerminal))
 	s.mux.HandleFunc("DELETE /api/terminals/{id}", s.authJSON(s.handleRemoveTerminal))
@@ -627,6 +631,52 @@ func (s *Server) handleKillTerminal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (s *Server) handleHerdrSpaces(w http.ResponseWriter, r *http.Request) {
+	var spaces json.RawMessage = json.RawMessage(`[]`)
+	if raw, err := s.hc.DocGet(r.Context(), "herdr-app"); err == nil && len(raw) > 0 {
+		var doc struct {
+			Spaces json.RawMessage `json:"spaces"`
+		}
+		if json.Unmarshal(raw, &doc) == nil && len(doc.Spaces) > 0 {
+			spaces = doc.Spaces
+		}
+	}
+
+	colors := map[string]string{}
+	if home, err := os.UserHomeDir(); err == nil {
+		sharedPath := filepath.Join(home, ".config", "herdr-app", "shared.json")
+		if b, err := os.ReadFile(sharedPath); err == nil {
+			var shared struct {
+				SpaceColors map[string]string `json:"space.colors"`
+			}
+			if json.Unmarshal(b, &shared) == nil && shared.SpaceColors != nil {
+				colors = shared.SpaceColors
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"spaces": spaces,
+		"colors": colors,
+	})
+}
+
+func (s *Server) handleLabelTerminal(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		Labels map[string]string `json:"labels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.hc.SetLabels(r.Context(), id, body.Labels); err != nil {
+		writeJSONError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) handleRemoveTerminal(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.hc.RemoveTerminal(r.Context(), id); err != nil {
@@ -664,6 +714,9 @@ func (s *Server) ListenAndServe(ctx context.Context) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.StartHCEventPump(ctx)
+	go func() {
+		s.EnsureHCDaemonIfInstalled(ctx)
+		s.StartHCEventPump(ctx)
+	}()
 	return ln, nil
 }

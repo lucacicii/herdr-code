@@ -351,12 +351,13 @@ textarea:focus-visible {
   color: var(--text-secondary);
   font-size: 11.5px;
   font-weight: 500;
-  padding: 3px 9px;
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .seg-btn.active {
@@ -444,12 +445,30 @@ textarea:focus-visible {
   color: var(--accent);
 }
 
-.tree-row .tree-ref-btn {
+.tree-row .tree-ref-btn,
+.tree-row .row-action {
   opacity: 0;
-  margin-left: auto;
   transition: opacity 0.1s ease;
 }
 
-.tree-row:hover .tree-ref-btn {
+.tree-row .tree-ref-btn {
+  margin-left: auto;
+}
+
+.tree-row:hover .tree-ref-btn,
+.tree-row:hover .row-action {
   opacity: 1;
+}
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-slow {
+  animation: spinSlow 1.1s linear infinite;
 }

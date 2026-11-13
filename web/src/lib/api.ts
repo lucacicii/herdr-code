@@ -154,7 +154,15 @@ export const api = {
 
   listTemplates: () => req<{ templates: TemplateInfo[] }>('/api/templates'),
 
+  herdrSpaces: () => req<import('../types/api').HerdrSpacesResponse>('/api/herdr/spaces'),
+
   listTerminals: () => req<{ terminals: TerminalInfo[] }>('/api/terminals'),
+
+  labelTerminal: (id: string, labels: Record<string, string>) =>
+    req<{ ok: boolean }>(`/api/terminals/${encodeURIComponent(id)}/label`, {
+      method: 'POST',
+      body: JSON.stringify({ labels }),
+    }),
 
   createTerminal: (opts: {
     workspace_id?: string;
@@ -182,5 +190,14 @@ export const api = {
   killTerminal: (id: string) =>
     req<{ ok: boolean }>(`/api/terminals/${encodeURIComponent(id)}/kill`, {
       method: 'POST',
+    }),
+
+  getDependencies: () =>
+    req<import('../types/api').DependenciesStatus>('/api/settings/dependencies'),
+
+  installDependency: (target: 'herdr-core' | 'herdr-core-start') =>
+    req<import('../types/api').InstallDependencyResponse>('/api/settings/dependencies/install', {
+      method: 'POST',
+      body: JSON.stringify({ target }),
     }),
 };

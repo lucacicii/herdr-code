@@ -4,26 +4,27 @@ import { CenterCodePane } from './components/CenterCodePane';
 import { LeftSidebar } from './components/LeftSidebar';
 import { NewTerminalModal } from './components/NewTerminalModal';
 import { QuickOpenModal } from './components/QuickOpenModal';
-import { RightTerminalPane } from './components/RightTerminalPane';
+import { RightTerminalPane, type RightTerminalPaneHandle } from './components/RightTerminalPane';
+import { SettingsModal } from './components/SettingsModal';
 import { TopBar } from './components/TopBar';
 import { api, initTokenFromEnv, setAuthToken, wsUrl } from './lib/api';
 import { formatLineAnchor } from './lib/references';
+import {
+  loadTerminalFontConfig,
+  saveTerminalFontConfig,
+  type TerminalFontConfig,
+} from './lib/terminalFont';
 import type {
   CenterTab,
   DiffHunk,
   DiffMode,
   FileContent,
   FileDiff,
-  ReferenceChip,
+  HerdrSpace,
   RepoStatus,
-  ReviewComment,
   TerminalInfo,
   Workspace,
 } from './types/api';
-
-function makeId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -35,18 +36,28 @@ export function App() {
     const saved = localStorage.getItem('herdr_code_theme');
     return saved === 'dark' ? 'dark' : 'light';
   });
+  const [terminalFont, setTerminalFont] = useState<TerminalFontConfig>(() =>
+    loadTerminalFontConfig()
+  );
+
+  useEffect(() => {
+    saveTerminalFontConfig(terminalFont);
+  }, [terminalFont]);
 
   const [authNeeded, setAuthNeeded] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
 
   const [hcConnected, setHcConnected] = useState(false);
-  const [hcVersion, setHcVersion] = useState<string | undefined>();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() =>
     localStorage.getItem('herdr_code_ws')
   );
   const [allTerminals, setAllTerminals] = useState<TerminalInfo[]>([]);
+  const [herdrSpaces, setHerdrSpaces] = useState<HerdrSpace[]>([]);
+  const [herdrColors, setHerdrColors] = useState<Record<string, string>>({});
+  const [focusedTerminalAddress, setFocusedTerminalAddress] = useState<string | null>(null);
+  const [terminalFocusReq, setTerminalFocusReq] = useState<{ address: string; seq: number } | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatus | null>(null);
 
   const [tabs, setTabs] = useState<CenterTab[]>([]);
@@ -59,18 +70,21 @@ export function App() {
   const [activeDiff, setActiveDiff] = useState<FileDiff | null>(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
 
-  const [chips, setChips] = useState<ReferenceChip[]>([]);
-  const [reviewComments, setReviewComments] = useState<ReviewComment[]>([]);
+  const terminalPaneRef = useRef<RightTerminalPaneHandle>(null);
 
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [showNewTerminal, setShowNewTerminal] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsPromptReason, setSettingsPromptReason] = useState<string | undefined>(undefined);
+  const [codePaneOpen, setCodePaneOpen] = useState(false);
+  const checkedDepsOnBootRef = useRef(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
-  // Column widths in pixels (left fixed, right flex/px, center flex)
-  const [leftWidth, setLeftWidth] = useState(260);
-  const [rightWidth, setRightWidth] = useState(540);
+  // Column widths in pixels (left fixed, center flex, right fixed)
+  const [leftWidth, setLeftWidth] = useState(280);
+  const [rightWidth, setRightWidth] = useState(520);
   const dragRef = useRef<{ side: 'left' | 'right'; startX: number; startW: number } | null>(null);
 
   useEffect(() => {
@@ -106,15 +120,17 @@ export function App() {
     try {
       const h = await api.health();
       setHcConnected(h.hc_connected);
-      setHcVersion(h.hc_version);
 
-      const [wsRes, termRes] = await Promise.all([
+      const [wsRes, termRes, herdrRes] = await Promise.all([
         api.listWorkspaces(),
         api.listTerminals().catch(() => ({ terminals: [] as TerminalInfo[] })),
+        api.herdrSpaces().catch(() => ({ spaces: [] as HerdrSpace[], colors: {} as Record<string, string> })),
       ]);
       setAuthNeeded(false);
       setWorkspaces(wsRes.workspaces);
       setAllTerminals(termRes.terminals || []);
+      setHerdrSpaces(herdrRes.spaces || []);
+      setHerdrColors(herdrRes.colors || {});
 
       setActiveWorkspaceId((prev) => {
         if (prev && wsRes.workspaces.some((w) => w.id === prev)) return prev;
@@ -131,6 +147,33 @@ export function App() {
   useEffect(() => {
     void refreshData();
   }, [refreshData]);
+
+  // Option A: Auto-check Herdr dependencies on initial load; if missing or daemon stopped, open Settings automatically
+  useEffect(() => {
+    if (authNeeded || checkedDepsOnBootRef.current) return;
+    let cancelled = false;
+    void api
+      .getDependencies()
+      .then((deps) => {
+        if (cancelled) return;
+        checkedDepsOnBootRef.current = true;
+        if (!deps.hc_cli.installed) {
+          setSettingsPromptReason(
+            'herdr-core (hc) is not installed yet. Click "Install herdr-core" below to install and start it automatically.'
+          );
+          setShowSettings(true);
+        } else if (!deps.hc_daemon.running) {
+          setSettingsPromptReason(
+            'herdr-core Daemon is not running. Click "Start Daemon" below to connect live terminals.'
+          );
+          setShowSettings(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authNeeded]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || null;
 
@@ -240,7 +283,7 @@ export function App() {
       if (d.side === 'left') {
         setLeftWidth(Math.max(180, Math.min(460, d.startW + (e.clientX - d.startX))));
       } else {
-        setRightWidth(Math.max(320, Math.min(900, d.startW - (e.clientX - d.startX))));
+        setRightWidth(Math.max(280, Math.min(960, d.startW - (e.clientX - d.startX))));
       }
     };
     const onUp = () => {
@@ -273,6 +316,7 @@ export function App() {
         ];
       });
       setActiveTabId(tabId);
+      setCodePaneOpen(true);
 
       try {
         const fc = await api.readFile(activeWorkspaceId, path);
@@ -298,6 +342,7 @@ export function App() {
         return [...prev, { id: 'diff', kind: 'diff', path, mode, target }];
       });
       setActiveTabId('diff');
+      setCodePaneOpen(true);
       setLoadingDiff(true);
       try {
         const d = await api.gitDiff(activeWorkspaceId, mode, target, path);
@@ -322,25 +367,16 @@ export function App() {
     }
   }, [activeDiffPath, activeWorkspaceId, diffMode, diffTarget, refreshGit]);
 
+  const pasteIntoFocusedTerminal = useCallback((text: string) => {
+    terminalPaneRef.current?.pasteText(text);
+  }, []);
+
   const addFileRef = (path: string) => {
-    setChips((prev) => [
-      ...prev,
-      { id: makeId('ref'), kind: 'path', label: `@${path}`, path },
-    ]);
+    pasteIntoFocusedTerminal(`@${path} `);
   };
 
   const addLineRef = (path: string, startLine: number, endLine: number) => {
-    setChips((prev) => [
-      ...prev,
-      {
-        id: makeId('ref'),
-        kind: 'lines',
-        label: formatLineAnchor(path, startLine, endLine),
-        path,
-        startLine,
-        endLine,
-      },
-    ]);
+    pasteIntoFocusedTerminal(`${formatLineAnchor(path, startLine, endLine)} `);
   };
 
   const addSnippetRef = (
@@ -350,54 +386,17 @@ export function App() {
     snippet: string,
     language: string
   ) => {
-    setChips((prev) => [
-      ...prev,
-      {
-        id: makeId('ref'),
-        kind: 'snippet',
-        label: `${formatLineAnchor(path, startLine, endLine)} (snippet)`,
-        path,
-        startLine,
-        endLine,
-        snippet,
-        language,
-      },
-    ]);
+    const anchor = formatLineAnchor(path, startLine, endLine);
+    pasteIntoFocusedTerminal(`${anchor}\n\`\`\`${language || ''}\n${snippet}\n\`\`\`\n`);
   };
 
   const addHunkRef = (path: string, hunk: DiffHunk) => {
-    setChips((prev) => [
-      ...prev,
-      {
-        id: makeId('ref'),
-        kind: 'hunk',
-        label: `@${path.split('/').pop()} (${hunk.id})`,
-        path,
-        snippet: hunk.patch,
-      },
-    ]);
+    pasteIntoFocusedTerminal(`@${path} (diff hunk)\n\`\`\`diff\n${hunk.patch}\n\`\`\`\n`);
   };
 
   const addReviewComment = (path: string, startLine: number, endLine: number, text: string) => {
-    setReviewComments((prev) => [
-      ...prev,
-      { id: makeId('rc'), path, startLine, endLine, text },
-    ]);
-  };
-
-  const attachReviewComments = () => {
-    if (reviewComments.length === 0) return;
-    setChips((prev) => [
-      ...prev,
-      {
-        id: makeId('rev'),
-        kind: 'review',
-        label: `Review (${reviewComments.length} comments)`,
-        path: reviewComments[0].path,
-        comments: [...reviewComments],
-      },
-    ]);
-    setReviewComments([]);
+    const anchor = formatLineAnchor(path, startLine, endLine);
+    pasteIntoFocusedTerminal(`- ${anchor}: ${text}\n`);
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -438,38 +437,45 @@ export function App() {
   return (
     <div className="wb-root">
       <TopBar
-        workspaces={workspaces}
         activeWorkspace={activeWorkspace}
         repoStatus={repoStatus}
         hcConnected={hcConnected}
-        hcVersion={hcVersion}
         theme={theme}
-        canInstallPWA={Boolean(installPrompt)}
-        onInstallPWA={async () => {
-          if (!installPrompt) return;
-          await installPrompt.prompt();
-          const choice = await installPrompt.userChoice;
-          if (choice.outcome === 'accepted') {
-            setInstallPrompt(null);
-          }
-        }}
-        onSelectWorkspace={setActiveWorkspaceId}
-        onOpenAddWorkspace={() => setShowAddWorkspace(true)}
+        codePaneOpen={codePaneOpen}
+        codeTabCount={tabs.length}
         onOpenQuickSearch={() => setShowQuickOpen(true)}
-        onOpenNewTerminal={() => setShowNewTerminal(true)}
+        onToggleCodePane={() => setCodePaneOpen((v) => !v)}
+        onOpenSettings={() => {
+          setSettingsPromptReason(undefined);
+          setShowSettings(true);
+        }}
         onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
       />
 
       <main className="wb-main">
         <aside className="wb-col" style={{ width: leftWidth, flexShrink: 0 }}>
           <LeftSidebar
+            workspaces={workspaces}
             workspace={activeWorkspace}
+            allTerminals={allTerminals}
+            focusedTerminalAddress={focusedTerminalAddress}
+            herdrSpaces={herdrSpaces}
+            herdrColors={herdrColors}
             repoStatus={repoStatus}
             activeFilePath={activeFilePath}
             diffMode={diffMode}
             diffTarget={diffTarget}
             activeDiffPath={activeDiffPath}
             refreshSignal={refreshSignal}
+            onSelectWorkspace={setActiveWorkspaceId}
+            onFocusSession={(address, wsId) => {
+              if (wsId && wsId !== activeWorkspaceId) {
+                setActiveWorkspaceId(wsId);
+              }
+              setTerminalFocusReq((prev) => ({ address, seq: (prev?.seq || 0) + 1 }));
+            }}
+            onOpenAddWorkspace={() => setShowAddWorkspace(true)}
+            onTerminalsMutated={() => void refreshData()}
             onOpenFile={(p) => void openFile(p)}
             onOpenDiff={(p, m, t) => void openDiff(p, m, t)}
             onChangeDiffParams={(m, t) => {
@@ -488,62 +494,66 @@ export function App() {
           }}
         />
 
-        <section className="wb-col" style={{ flex: 1, minWidth: 260 }}>
-          <CenterCodePane
-            workspaceId={activeWorkspaceId}
-            tabs={tabs}
-            activeTabId={activeTabId}
-            filesByPath={filesByPath}
-            activeDiff={activeDiff}
-            loadingDiff={loadingDiff}
-            theme={theme}
-            onSelectTab={setActiveTabId}
-            onCloseTab={(id) => {
-              setTabs((prev) => {
-                const next = prev.filter((t) => t.id !== id);
-                if (activeTabId === id) {
-                  setActiveTabId(next[next.length - 1]?.id || null);
-                }
-                return next;
-              });
-            }}
-            onOpenQuickSearch={() => setShowQuickOpen(true)}
-            onAddFileRef={addFileRef}
-            onAddLineRef={addLineRef}
-            onAddSnippetRef={addSnippetRef}
-            onAddHunkRef={addHunkRef}
-            onAddReviewComment={addReviewComment}
-            onGitMutated={handleGitMutated}
-          />
-        </section>
-
-        <div
-          className="wb-resizer"
-          onMouseDown={(e) => {
-            dragRef.current = { side: 'right', startX: e.clientX, startW: rightWidth };
-          }}
-        />
-
-        <aside className="wb-col" style={{ width: rightWidth, flexShrink: 0 }}>
+        <section className="wb-col" style={{ flex: 1, minWidth: 320 }}>
           <RightTerminalPane
+            ref={terminalPaneRef}
             workspaceTerminals={activeWorkspace?.terminals || []}
             allTerminals={allTerminals}
+            activeWorkspacePath={activeWorkspace?.path}
+            focusRequest={terminalFocusReq}
             theme={theme}
-            chips={chips}
-            reviewComments={reviewComments}
-            onRemoveChip={(id) => setChips((prev) => prev.filter((c) => c.id !== id))}
-            onClearChips={() => setChips([])}
+            terminalFont={terminalFont}
+            onFocusedTerminalChange={setFocusedTerminalAddress}
             onAddPathChip={addFileRef}
-            onRemoveReviewComment={(id) =>
-              setReviewComments((prev) => prev.filter((c) => c.id !== id))
-            }
-            onClearReviewComments={() => setReviewComments([])}
-            onAttachReviewComments={attachReviewComments}
             onOpenFileLine={(p, line) => void openFile(p, line)}
             onOpenNewTerminal={() => setShowNewTerminal(true)}
             onTerminalsMutated={() => void refreshData()}
           />
-        </aside>
+        </section>
+
+        {codePaneOpen && (
+          <>
+            <div
+              className="wb-resizer"
+              onMouseDown={(e) => {
+                dragRef.current = { side: 'right', startX: e.clientX, startW: rightWidth };
+              }}
+            />
+
+            <aside className="wb-col" style={{ width: rightWidth, flexShrink: 0, minWidth: 260 }}>
+              <CenterCodePane
+                workspaceId={activeWorkspaceId}
+                tabs={tabs}
+                activeTabId={activeTabId}
+                filesByPath={filesByPath}
+                activeDiff={activeDiff}
+                loadingDiff={loadingDiff}
+                theme={theme}
+                onSelectTab={setActiveTabId}
+                onCloseTab={(id) => {
+                  setTabs((prev) => {
+                    const next = prev.filter((t) => t.id !== id);
+                    if (activeTabId === id) {
+                      setActiveTabId(next[next.length - 1]?.id || null);
+                    }
+                    if (next.length === 0) {
+                      setCodePaneOpen(false);
+                    }
+                    return next;
+                  });
+                }}
+                onCollapse={() => setCodePaneOpen(false)}
+                onOpenQuickSearch={() => setShowQuickOpen(true)}
+                onAddFileRef={addFileRef}
+                onAddLineRef={addLineRef}
+                onAddSnippetRef={addSnippetRef}
+                onAddHunkRef={addHunkRef}
+                onAddReviewComment={addReviewComment}
+                onGitMutated={handleGitMutated}
+              />
+            </aside>
+          </>
+        )}
       </main>
 
       {showQuickOpen && activeWorkspaceId && (
@@ -570,6 +580,30 @@ export function App() {
           onCreated={() => {
             void refreshData();
           }}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          theme={theme}
+          terminalFont={terminalFont}
+          canInstallPWA={Boolean(installPrompt)}
+          autoPromptReason={settingsPromptReason}
+          onChangeTerminalFont={setTerminalFont}
+          onInstallPWA={async () => {
+            if (!installPrompt) return;
+            await installPrompt.prompt();
+            const choice = await installPrompt.userChoice;
+            if (choice.outcome === 'accepted') {
+              setInstallPrompt(null);
+            }
+          }}
+          onToggleTheme={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+          onClose={() => {
+            setShowSettings(false);
+            setSettingsPromptReason(undefined);
+          }}
+          onDependenciesChanged={() => void refreshData()}
         />
       )}
     </div>

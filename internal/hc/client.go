@@ -194,6 +194,17 @@ func (c *Client) ListTemplates(ctx context.Context) ([]TemplateInfo, error) {
 	return res.Templates, nil
 }
 
+func (c *Client) DocGet(ctx context.Context, name string) (json.RawMessage, error) {
+	var res struct {
+		Value   json.RawMessage `json:"value"`
+		Version uint64          `json:"version"`
+	}
+	if err := c.Call(ctx, "doc.get", map[string]any{"name": name}, &res); err != nil {
+		return nil, err
+	}
+	return res.Value, nil
+}
+
 // framedConn manages a single dedicated framed connection to hc.
 type framedConn struct {
 	conn   net.Conn

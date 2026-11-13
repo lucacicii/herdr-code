@@ -1,44 +1,37 @@
 import {
-  Download,
-  FolderPlus,
   GitBranch,
   Moon,
-  Plus,
+  PanelRight,
   Search,
+  Settings,
   Sun,
   Terminal as TerminalIcon,
 } from 'lucide-react';
 import type { RepoStatus, Workspace } from '../types/api';
 
 interface TopBarProps {
-  workspaces: Workspace[];
   activeWorkspace: Workspace | null;
   repoStatus: RepoStatus | null;
   hcConnected: boolean;
-  hcVersion?: string;
   theme: 'light' | 'dark';
-  canInstallPWA?: boolean;
-  onInstallPWA?: () => void;
-  onSelectWorkspace: (id: string) => void;
-  onOpenAddWorkspace: () => void;
+  codePaneOpen: boolean;
+  codeTabCount: number;
   onOpenQuickSearch: () => void;
-  onOpenNewTerminal: () => void;
+  onToggleCodePane: () => void;
+  onOpenSettings: () => void;
   onToggleTheme: () => void;
 }
 
 export function TopBar({
-  workspaces,
   activeWorkspace,
   repoStatus,
   hcConnected,
-  hcVersion,
   theme,
-  canInstallPWA,
-  onInstallPWA,
-  onSelectWorkspace,
-  onOpenAddWorkspace,
+  codePaneOpen,
+  codeTabCount,
   onOpenQuickSearch,
-  onOpenNewTerminal,
+  onToggleCodePane,
+  onOpenSettings,
   onToggleTheme,
 }: TopBarProps) {
   return (
@@ -49,62 +42,60 @@ export function TopBar({
           <span>herdr-code</span>
         </div>
 
-        <span style={{ color: 'var(--border-strong)' }}>/</span>
+        {activeWorkspace && (
+          <>
+            <span style={{ color: 'var(--border-strong)' }}>/</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span
+                title={activeWorkspace.path}
+                style={{
+                  fontWeight: 500,
+                  fontSize: 13,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: 220,
+                }}
+              >
+                {activeWorkspace.name}
+              </span>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <select
-            className="input"
-            aria-label="Workspace"
-            value={activeWorkspace?.id || ''}
-            onChange={(e) => onSelectWorkspace(e.target.value)}
-            style={{ minWidth: 180, maxWidth: 280, fontWeight: 500 }}
-          >
-            {workspaces.length === 0 && <option value="">No Workspaces</option>}
-            {workspaces.map((ws) => (
-              <option key={ws.id} value={ws.id}>
-                {ws.name} ({ws.counts.total})
-              </option>
-            ))}
-          </select>
+              {repoStatus?.is_repo && repoStatus.branch && (
+                <span
+                  className="mono"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 11.5,
+                    color: 'var(--text-secondary)',
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: 'var(--bg-subtle)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <GitBranch size={12} />
+                  <span>{repoStatus.branch}</span>
+                </span>
+              )}
 
-          <button className="btn btn-sm" onClick={onOpenAddWorkspace} title="Add Workspace">
-            <FolderPlus size={13} />
-            <span>Add Workspace</span>
-          </button>
-
-          {repoStatus?.is_repo && repoStatus.branch && (
-            <span
-              className="mono"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 11.5,
-                color: 'var(--text-secondary)',
-                padding: '2px 8px',
-                borderRadius: 6,
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-subtle)',
-              }}
-            >
-              <GitBranch size={12} />
-              <span>{repoStatus.branch}</span>
-            </span>
-          )}
-
-          {activeWorkspace && activeWorkspace.counts.blocked > 0 && (
-            <span className="status-badge status-blocked tabular">
-              <span className="status-dot" />
-              <span>{activeWorkspace.counts.blocked} Blocked</span>
-            </span>
-          )}
-          {activeWorkspace && activeWorkspace.counts.working > 0 && (
-            <span className="status-badge status-working tabular">
-              <span className="status-dot" />
-              <span>{activeWorkspace.counts.working} Working</span>
-            </span>
-          )}
-        </div>
+              {activeWorkspace.counts.blocked > 0 && (
+                <span className="status-badge status-blocked tabular">
+                  <span className="status-dot" />
+                  <span>{activeWorkspace.counts.blocked} Blocked</span>
+                </span>
+              )}
+              {activeWorkspace.counts.working > 0 && (
+                <span className="status-badge status-working tabular">
+                  <span className="status-dot" />
+                  <span>{activeWorkspace.counts.working} Working</span>
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -131,29 +122,50 @@ export function TopBar({
           </kbd>
         </button>
 
-        <button className="btn btn-primary" onClick={onOpenNewTerminal} disabled={!activeWorkspace}>
-          <Plus size={13} />
-          <span>New Terminal</span>
+        <button
+          className={`btn ${codePaneOpen ? 'btn-accent' : ''}`}
+          onClick={onToggleCodePane}
+          title={codePaneOpen ? 'Hide Code & Diff Panel' : 'Show Code & Diff Panel'}
+          aria-label="Toggle Code Panel"
+        >
+          <PanelRight size={13} />
+          <span>Code{codeTabCount > 0 ? ` (${codeTabCount})` : ''}</span>
         </button>
 
-        <span
-          className={`status-badge ${hcConnected ? 'status-done' : 'status-error'}`}
-          title={hcConnected ? `herdr-core ${hcVersion || ''}` : 'herdr-core disconnected'}
-        >
-          <span className="status-dot" />
-          <span>{hcConnected ? `hc ${hcVersion || 'ok'}` : 'hc offline'}</span>
-        </span>
-
-        {canInstallPWA && onInstallPWA && (
+        {!hcConnected && (
           <button
-            className="btn btn-sm"
-            onClick={onInstallPWA}
-            title="Install herdr-code as Desktop App"
+            className="status-badge status-error"
+            style={{ border: 'none', cursor: 'pointer' }}
+            onClick={onOpenSettings}
+            title="herdr-core disconnected — click to open Settings"
           >
-            <Download size={13} />
-            <span>Install</span>
+            <span className="status-dot" />
+            <span>hc offline</span>
           </button>
         )}
+
+        <button
+          className="btn btn-icon btn-ghost"
+          style={{ position: 'relative' }}
+          onClick={onOpenSettings}
+          title="Settings"
+          aria-label="Open Settings"
+        >
+          <Settings size={14} />
+          {!hcConnected && (
+            <span
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--status-blocked)',
+              }}
+            />
+          )}
+        </button>
 
         <button
           className="btn btn-icon btn-ghost"

@@ -28,15 +28,19 @@ type StatusCounts struct {
 }
 
 type Workspace struct {
-	ID         string        `json:"id"`
-	Name       string        `json:"name"`
-	Path       string        `json:"path"`
-	IsGitRepo  bool          `json:"is_git_repo"`
-	Pinned     bool          `json:"pinned"`
-	Auto       bool          `json:"auto"`
-	Terminals  []hc.Terminal `json:"terminals"`
-	Counts     StatusCounts  `json:"counts"`
-	UpdatedMs  int64         `json:"updated_ms"`
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Path         string        `json:"path"`
+	IsGitRepo    bool          `json:"is_git_repo"`
+	Branch       string        `json:"branch,omitempty"`
+	Ahead        int           `json:"ahead,omitempty"`
+	Behind       int           `json:"behind,omitempty"`
+	MainRepoPath string        `json:"main_repo_path,omitempty"`
+	Pinned       bool          `json:"pinned"`
+	Auto         bool          `json:"auto"`
+	Terminals    []hc.Terminal `json:"terminals"`
+	Counts       StatusCounts  `json:"counts"`
+	UpdatedMs    int64         `json:"updated_ms"`
 }
 
 type savedWorkspace struct {
@@ -175,6 +179,57 @@ func (m *Manager) resolveGitRoot(ctx context.Context, dir string) string {
 	m.gitRootCache[dir] = root
 	m.mu.Unlock()
 	return root
+}
+
+type gitMeta struct {
+	Branch       string
+	Ahead        int
+	Behind       int
+	MainRepoPath string
+}
+
+func resolveGitMeta(ctx context.Context, root string) gitMeta {
+	var gm gitMeta
+	cctx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+	defer cancel()
+
+	// Branch
+	if out, err := exec.CommandContext(cctx, "git", "-C", root, "symbolic-ref", "--short", "-q", "HEAD").Output(); err == nil {
+		gm.Branch = strings.TrimSpace(string(out))
+	} else if out, err := exec.CommandContext(cctx, "git", "-C", root, "rev-parse", "--short", "HEAD").Output(); err == nil {
+		gm.Branch = strings.TrimSpace(string(out))
+	}
+
+	// Ahead / behind upstream
+	if out, err := exec.CommandContext(cctx, "git", "-C", root, "rev-list", "--left-right", "--count", "HEAD...@{upstream}").Output(); err == nil {
+		var a, b int
+		if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d\t%d", &a, &b); err == nil {
+			gm.Ahead = a
+			gm.Behind = b
+		} else if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d", &a, &b); err == nil {
+			gm.Ahead = a
+			gm.Behind = b
+		}
+	}
+
+	// Detect linked worktree
+	if out, err := exec.CommandContext(cctx, "git", "-C", root, "rev-parse", "--git-common-dir").Output(); err == nil {
+		common := strings.TrimSpace(string(out))
+		if common != "" && common != ".git" {
+			if !filepath.IsAbs(common) {
+				common = filepath.Join(root, common)
+			}
+			common = filepath.Clean(common)
+			if filepath.Base(common) == ".git" {
+				parent := filepath.Dir(common)
+				if canonParent, err := canonicalDir(parent); err == nil && canonParent != root {
+					gm.MainRepoPath = canonParent
+				}
+			}
+		}
+	}
+
+	return gm
 }
 
 func (m *Manager) Add(ctx context.Context, rawPath string, pin bool) (*Workspace, error) {
@@ -346,6 +401,13 @@ func (m *Manager) List(ctx context.Context) ([]Workspace, error) {
 		sort.Slice(ws.Terminals, func(i, j int) bool {
 			return ws.Terminals[i].CreatedMs < ws.Terminals[j].CreatedMs
 		})
+		if ws.IsGitRepo {
+			gm := resolveGitMeta(ctx, ws.Path)
+			ws.Branch = gm.Branch
+			ws.Ahead = gm.Ahead
+			ws.Behind = gm.Behind
+			ws.MainRepoPath = gm.MainRepoPath
+		}
 		result = append(result, *ws)
 	}
 

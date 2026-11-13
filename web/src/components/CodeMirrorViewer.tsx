@@ -107,7 +107,9 @@ export function CodeMirrorViewer({
             const coords = update.view.coordsAtPos(sel.from);
             const hostRect = host.getBoundingClientRect();
             const top = coords ? Math.max(8, coords.top - hostRect.top - 42) : 12;
-            const left = coords ? Math.max(12, Math.min(coords.left - hostRect.left, hostRect.width - 340)) : 24;
+            const left = coords
+              ? Math.max(8, Math.min(coords.left - hostRect.left, Math.max(8, hostRect.width - 280)))
+              : 16;
 
             setSelection({ startLine, endLine, snippet, top, left });
           }
@@ -169,7 +171,8 @@ export function CodeMirrorViewer({
             display: 'flex',
             flexDirection: 'column',
             gap: 6,
-            minWidth: commentMode ? 300 : 'auto',
+            maxWidth: 'calc(100% - 16px)',
+            minWidth: commentMode ? Math.min(280, 300) : 'auto',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

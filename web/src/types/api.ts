@@ -26,9 +26,13 @@ export interface TerminalInfo {
   created_ms: number;
   cols: number;
   rows: number;
+  parent?: string | null;
+  labels?: Record<string, string>;
   status?: TerminalStatus | null;
+  status_ms?: number | null;
   foreground?: ForegroundProc | null;
   template?: string | null;
+  turn?: number;
 }
 
 export interface WorkspaceCounts {
@@ -45,11 +49,72 @@ export interface Workspace {
   name: string;
   path: string;
   is_git_repo: boolean;
+  branch?: string;
+  ahead?: number;
+  behind?: number;
+  main_repo_path?: string;
   pinned: boolean;
   auto: boolean;
   terminals: TerminalInfo[];
   counts: WorkspaceCounts;
   updated_ms: number;
+}
+
+export interface HerdrLayoutNode {
+  id: string;
+  type: string;
+  content?: { terminal?: string };
+  children?: HerdrLayoutNode[];
+}
+
+export interface HerdrTab {
+  id: string;
+  name: string;
+  root?: HerdrLayoutNode;
+}
+
+export interface HerdrSpace {
+  id: string;
+  folder: string;
+  name: string;
+  tabs: HerdrTab[];
+}
+
+export interface HerdrSpacesResponse {
+  spaces: HerdrSpace[];
+  colors: Record<string, string>;
+}
+
+export interface DepCLIStatus {
+  installed: boolean;
+  path?: string;
+  version?: string;
+}
+
+export interface DepDaemonStatus {
+  running: boolean;
+  socket_path: string;
+  version?: string;
+  pid?: number;
+  live_terminals?: number;
+  error?: string;
+}
+
+export interface DependenciesStatus {
+  os: string;
+  arch: string;
+  all_required_ok: boolean;
+  hc_cli: DepCLIStatus;
+  hc_daemon: DepDaemonStatus;
+  git_cli: DepCLIStatus;
+}
+
+export interface InstallDependencyResponse {
+  ok: boolean;
+  target: string;
+  output: string;
+  error?: string;
+  status: DependenciesStatus;
 }
 
 export interface TreeEntry {

@@ -15,22 +15,34 @@ import {
   Undo2,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { SessionsSidebar } from './SessionsSidebar';
 import type {
   ChangedFile,
   DiffMode,
+  HerdrSpace,
   RepoStatus,
+  TerminalInfo,
   TreeEntry,
   Workspace,
 } from '../types/api';
 
 interface LeftSidebarProps {
+  workspaces: Workspace[];
   workspace: Workspace | null;
+  allTerminals: TerminalInfo[];
+  focusedTerminalAddress: string | null;
+  herdrSpaces: HerdrSpace[];
+  herdrColors: Record<string, string>;
   repoStatus: RepoStatus | null;
   activeFilePath: string | null;
   diffMode: DiffMode;
   diffTarget: string;
   activeDiffPath: string | null;
   refreshSignal: number;
+  onSelectWorkspace: (wsId: string) => void;
+  onFocusSession: (terminalAddress: string, workspaceId: string | null) => void;
+  onOpenAddWorkspace: () => void;
+  onTerminalsMutated: () => void;
   onOpenFile: (path: string) => void;
   onOpenDiff: (path: string, mode: DiffMode, target: string) => void;
   onChangeDiffParams: (mode: DiffMode, target: string) => void;
@@ -39,20 +51,29 @@ interface LeftSidebarProps {
 }
 
 export function LeftSidebar({
+  workspaces,
   workspace,
+  allTerminals,
+  focusedTerminalAddress,
+  herdrSpaces,
+  herdrColors,
   repoStatus,
   activeFilePath,
   diffMode,
   diffTarget,
   activeDiffPath,
   refreshSignal,
+  onSelectWorkspace,
+  onFocusSession,
+  onOpenAddWorkspace,
+  onTerminalsMutated,
   onOpenFile,
   onOpenDiff,
   onChangeDiffParams,
   onInsertReferencePath,
   onGitMutated,
 }: LeftSidebarProps) {
-  const [section, setSection] = useState<'files' | 'changes'>('files');
+  const [section, setSection] = useState<'sessions' | 'files' | 'changes'>('sessions');
   const [showHidden, setShowHidden] = useState(false);
   const [treeCache, setTreeCache] = useState<Record<string, TreeEntry[]>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -259,6 +280,12 @@ export function LeftSidebar({
       >
         <div className="seg-group">
           <button
+            className={`seg-btn ${section === 'sessions' ? 'active' : ''}`}
+            onClick={() => setSection('sessions')}
+          >
+            Sessions
+          </button>
+          <button
             className={`seg-btn ${section === 'files' ? 'active' : ''}`}
             onClick={() => setSection('files')}
           >
@@ -285,7 +312,11 @@ export function LeftSidebar({
           )}
           <button
             className="btn btn-icon btn-ghost"
-            onClick={() => (section === 'files' ? void loadDir('') : onGitMutated())}
+            onClick={() => {
+              if (section === 'files') void loadDir('');
+              else if (section === 'changes') onGitMutated();
+              else onTerminalsMutated();
+            }}
             title="Refresh"
           >
             <RefreshCw size={13} />
@@ -293,7 +324,22 @@ export function LeftSidebar({
         </div>
       </div>
 
-      {section === 'files' ? (
+      {section === 'sessions' ? (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <SessionsSidebar
+            workspaces={workspaces}
+            activeWorkspaceId={workspace?.id || null}
+            allTerminals={allTerminals}
+            focusedTerminalAddress={focusedTerminalAddress}
+            herdrSpaces={herdrSpaces}
+            herdrColors={herdrColors}
+            onSelectWorkspace={onSelectWorkspace}
+            onFocusSession={onFocusSession}
+            onOpenAddWorkspace={onOpenAddWorkspace}
+            onTerminalsMutated={onTerminalsMutated}
+          />
+        </div>
+      ) : section === 'files' ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px 4px' }}>
           {!workspace && (
             <div style={{ padding: 16, color: 'var(--text-muted)', fontSize: 12 }}>

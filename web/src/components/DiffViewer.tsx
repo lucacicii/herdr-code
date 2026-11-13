@@ -164,8 +164,8 @@ export function DiffViewer({
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="mono" style={{ fontSize: 12, fontWeight: 500 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+          <span className="mono" style={{ fontSize: 12, fontWeight: 500, wordBreak: 'break-all' }}>
             {diff.path}
           </span>
           <span className="status-badge status-idle" style={{ textTransform: 'capitalize' }}>
@@ -174,7 +174,7 @@ export function DiffViewer({
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {commentPrompt && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span className="mono" style={{ fontSize: 11, color: 'var(--accent)' }}>
