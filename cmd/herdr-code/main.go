@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,24 +20,59 @@ import (
 	"github.com/lucacicii/herdr-code/internal/server"
 )
 
-const version = "0.1.0"
+var version = "dev"
+
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:4242", "HTTP listen address")
 	socket := flag.String("socket", hc.DefaultSocketPath(), "Path to herdr-core (hc) Unix socket")
 	token := flag.String("token", os.Getenv("HERDR_CODE_TOKEN"), "Optional bearer token for API/WebSocket auth")
+	allowedOrigin := flag.String("allowed-origin", os.Getenv("HERDR_CODE_ALLOWED_ORIGIN"), "Comma-separated extra allowed Origins or hostnames")
 	openBrowser := flag.Bool("open", false, "Open the workbench URL in the default browser")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("herdr-code %s\n", version)
+		return
+	}
+
+	if !isLoopbackAddr(*addr) && strings.TrimSpace(*token) == "" {
+		log.Fatalf("refusing to listen on non-loopback address %q without --token (or HERDR_CODE_TOKEN)", *addr)
+	}
+
+	var allowedOrigins []string
+	for _, item := range strings.Split(*allowedOrigin, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			allowedOrigins = append(allowedOrigins, trimmed)
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	srv := server.New(server.Config{
-		Addr:       *addr,
-		SocketPath: *socket,
-		Token:      *token,
-		StaticFS:   herdrweb.StaticFS(),
-		Version:    version,
+		Addr:           *addr,
+		SocketPath:     *socket,
+		Token:          *token,
+		AllowedOrigins: allowedOrigins,
+		StaticFS:       herdrweb.StaticFS(),
+		Version:        version,
 	})
 	defer srv.Close()
 

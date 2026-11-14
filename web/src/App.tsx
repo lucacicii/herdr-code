@@ -577,8 +577,12 @@ export function App() {
         <NewTerminalModal
           workspace={activeWorkspace}
           onClose={() => setShowNewTerminal(false)}
-          onCreated={() => {
-            void refreshData();
+          onCreated={(term) => {
+            void refreshData().then(() => {
+              if (term.address) {
+                setTerminalFocusReq({ address: term.address, seq: Date.now() });
+              }
+            });
           }}
         />
       )}

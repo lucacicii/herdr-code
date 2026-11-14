@@ -31,6 +31,20 @@ func TestLiveHCIntegration(t *testing.T) {
 	}
 	t.Logf("hc %s (%s): %d live terminals", status.Version, status.Core.Name, len(list.Terminals))
 
+	// Verify RunTerminal decodes non-empty address from terminal.run
+	runRes, err := c.RunTerminal(ctx, RunParams{
+		Argv: []string{"/bin/sh", "-c", "sleep 2"},
+		Cwd:  os.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunTerminal failed: %v", err)
+	}
+	if runRes.Terminal.Address == "" {
+		t.Fatalf("expected non-empty terminal address from RunTerminal")
+	}
+	_ = c.KillTerminal(ctx, runRes.Terminal.Address)
+	_ = c.RemoveTerminal(ctx, runRes.Terminal.Address)
+
 	if len(list.Terminals) > 0 {
 		stream, err := c.Attach(ctx, AttachParams{
 			Terminal:            list.Terminals[0].Address,

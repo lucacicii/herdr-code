@@ -84,6 +84,17 @@ func TestOriginAndTokenAuthAndWorkspaceAPI(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("read file expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+
+	// 5. Same-host remote Origin allowed when token auth is enabled
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces", nil)
+	req.Host = "100.64.0.12:4242"
+	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("Origin", "http://100.64.0.12:4242")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("same-host token-protected remote origin expected 200, got %d", rec.Code)
+	}
 }
 
 func TestPWAStaticHeaders(t *testing.T) {

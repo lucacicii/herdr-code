@@ -27,8 +27,9 @@ type Config struct {
 	Addr       string
 	SocketPath string
 	Token      string
-	StaticFS   fs.FS
-	Version    string
+	StaticFS       fs.FS
+	Version        string
+	AllowedOrigins []string
 }
 
 type Server struct {
@@ -61,12 +62,12 @@ func New(cfg Config) *Server {
 		hub:        hub,
 		watcher:    watcher,
 		mux:        http.NewServeMux(),
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  32 * 1024,
-			WriteBufferSize: 32 * 1024,
-			CheckOrigin: func(r *http.Request) bool {
-				return isAllowedOrigin(r.Header.Get("Origin"))
-			},
+	}
+	s.upgrader = websocket.Upgrader{
+		ReadBufferSize:  32 * 1024,
+		WriteBufferSize: 32 * 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return s.isAllowedRequestOrigin(r)
 		},
 	}
 
@@ -82,7 +83,8 @@ func (s *Server) Close() {
 	s.watcher.Close()
 }
 
-func isAllowedOrigin(origin string) bool {
+func (s *Server) isAllowedRequestOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true
 	}
@@ -91,11 +93,27 @@ func isAllowedOrigin(origin string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+	if host == "127.0.0.1" || host == "localhost" || host == "::1" {
+		return true
+	}
+	for _, allowed := range s.cfg.AllowedOrigins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+		if strings.EqualFold(origin, allowed) || strings.EqualFold(host, allowed) {
+			return true
+		}
+	}
+	// When token auth is enabled, allow same-host browser requests (e.g. Tailscale / LAN)
+	if s.cfg.Token != "" && r.Host != "" && strings.EqualFold(u.Host, r.Host) {
+		return true
+	}
+	return false
 }
 
 func (s *Server) authorizeRequest(r *http.Request) bool {
-	if !isAllowedOrigin(r.Header.Get("Origin")) {
+	if !s.isAllowedRequestOrigin(r) {
 		return false
 	}
 	if s.cfg.Token == "" {
@@ -546,12 +564,23 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 			cwd = ws.Path
 		}
 	}
-	if len(body.Argv) == 0 && strings.TrimSpace(body.Line) == "" {
+	if len(body.Argv) == 0 {
 		shell := os.Getenv("SHELL")
 		if shell == "" {
 			shell = "/bin/zsh"
 		}
-		body.Argv = []string{shell}
+		trimmed := strings.TrimSpace(body.Line)
+		if trimmed == "" {
+			body.Argv = []string{shell, "-l"}
+		} else {
+			base := filepath.Base(shell)
+			if base == "zsh" || base == "bash" {
+				body.Argv = []string{shell, "-lic", trimmed}
+			} else {
+				body.Argv = []string{shell, "-lc", trimmed}
+			}
+			body.Line = ""
+		}
 	}
 	var size *hc.RunSize
 	if body.Cols > 0 && body.Rows > 0 {

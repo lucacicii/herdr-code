@@ -155,11 +155,22 @@ func (c *Client) GetTerminal(ctx context.Context, terminal string) (*Terminal, e
 }
 
 func (c *Client) RunTerminal(ctx context.Context, params RunParams) (*RunResult, error) {
-	var res RunResult
-	if err := c.Call(ctx, "terminal.run", params, &res); err != nil {
+	var raw json.RawMessage
+	if err := c.Call(ctx, "terminal.run", params, &raw); err != nil {
 		return nil, err
 	}
-	return &res, nil
+	var term Terminal
+	if err := json.Unmarshal(raw, &term); err != nil {
+		return nil, err
+	}
+	if term.Address != "" {
+		return &RunResult{Terminal: term}, nil
+	}
+	var wrapped RunResult
+	if err := json.Unmarshal(raw, &wrapped); err != nil {
+		return nil, err
+	}
+	return &wrapped, nil
 }
 
 func (c *Client) SendText(ctx context.Context, params SendParams) error {

@@ -70,28 +70,28 @@ export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalM
             <button
               className="btn"
               disabled={busy}
-              onClick={() => void launch({ name: name || 'shell' })}
+              onClick={() => void launch({ name: name.trim() || undefined })}
             >
               Default Shell
             </button>
             <button
               className="btn"
               disabled={busy}
-              onClick={() => void launch({ line: 'claude', name: name || 'claude' })}
+              onClick={() => void launch({ line: 'claude', name: name.trim() || undefined })}
             >
               claude
             </button>
             <button
               className="btn"
               disabled={busy}
-              onClick={() => void launch({ line: 'codex', name: name || 'codex' })}
+              onClick={() => void launch({ line: 'codex', name: name.trim() || undefined })}
             >
               codex
             </button>
             <button
               className="btn"
               disabled={busy}
-              onClick={() => void launch({ line: 'pi', name: name || 'pi' })}
+              onClick={() => void launch({ line: 'pi', name: name.trim() || undefined })}
             >
               pi
             </button>
@@ -104,7 +104,7 @@ export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalM
                   void launch({
                     argv: tpl.argv,
                     line: tpl.argv?.length ? undefined : tpl.name,
-                    name: name || tpl.name,
+                    name: name.trim() || undefined,
                   })
                 }
               >
@@ -146,7 +146,7 @@ export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalM
                 void launch({ line: command.trim() || undefined, name: name.trim() || undefined })
               }
             >
-              Launch Terminal
+              {busy ? 'Launching...' : 'Launch Terminal'}
             </button>
           </div>
         </div>
