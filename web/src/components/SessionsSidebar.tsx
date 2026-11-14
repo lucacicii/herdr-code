@@ -62,8 +62,10 @@ function getSpaceColor(
 
 const KNOWN_AGENT_APPS = new Set([
   'claude',
+  'claude-code',
   'codex',
   'pi',
+  'omp',
   'opencode',
   'gemini',
   'amp',
@@ -95,6 +97,9 @@ function detectProgram(t: TerminalInfo): { label: string; isAgent: boolean; colo
   }
   if (norm === 'pi' || norm.startsWith('pi ')) {
     return { label: 'Pi', isAgent: true, color: '#8b5cf6' };
+  }
+  if (norm === 'omp') {
+    return { label: 'OMP', isAgent: true, color: '#ec4899' };
   }
   if (norm.includes('opencode')) {
     return { label: 'OpenCode', isAgent: true, color: '#3b82f6' };
@@ -281,6 +286,85 @@ export function SessionsSidebar({
     return { topItems: tops, childrenByParent: kids };
   }, [allTerminals, agentsOnly]);
 
+  // Priority status sections matching official Herdr App:
+  // Pinned -> Needs you (blocked) -> Error -> Done -> Working -> Idle
+  const prioritySections = useMemo(() => {
+    const rankToState = (r: number): AgentState => {
+      switch (r) {
+        case 0:
+          return 'blocked';
+        case 1:
+          return 'error';
+        case 2:
+          return 'done';
+        case 3:
+          return 'working';
+        default:
+          return 'idle';
+      }
+    };
+
+    const effectiveState = (t: TerminalInfo): AgentState => {
+      let best = getStateRank(t.status?.state || 'idle');
+      for (const child of childrenByParent.get(t.address) || []) {
+        best = Math.min(best, getStateRank(child.status?.state || 'idle'));
+      }
+      return rankToState(best);
+    };
+
+    const sectionMeta: Record<AgentState, { label: string; color: string }> = {
+      blocked: { label: 'Needs you', color: 'var(--status-blocked)' },
+      error: { label: 'Error', color: 'var(--status-error)' },
+      done: { label: 'Done', color: 'var(--status-done)' },
+      working: { label: 'Working', color: 'var(--status-working)' },
+      idle: { label: 'Idle', color: 'var(--text-muted)' },
+    };
+
+    const sections: {
+      key: string;
+      label: string;
+      color: string;
+      statusKey?: AgentState;
+      items: TerminalInfo[];
+    }[] = [];
+
+    const pinned = topItems.filter((t) => t.labels?.['herdr.pinned'] === '1');
+    const unpinned = topItems.filter((t) => t.labels?.['herdr.pinned'] !== '1');
+
+    if (pinned.length > 0) {
+      sections.push({
+        key: 'sec-pinned',
+        label: 'Pinned',
+        color: 'var(--accent)',
+        items: pinned,
+      });
+    }
+
+    const byState = new Map<AgentState, TerminalInfo[]>();
+    for (const t of unpinned) {
+      const st = effectiveState(t);
+      const arr = byState.get(st) || [];
+      arr.push(t);
+      byState.set(st, arr);
+    }
+
+    const order: AgentState[] = ['blocked', 'error', 'done', 'working', 'idle'];
+    for (const st of order) {
+      const items = byState.get(st);
+      if (items && items.length > 0) {
+        sections.push({
+          key: `sec-${st}`,
+          label: sectionMeta[st].label,
+          color: sectionMeta[st].color,
+          statusKey: st,
+          items,
+        });
+      }
+    }
+
+    return sections;
+  }, [topItems, childrenByParent]);
+
   // Grouped by workspace/space when sortMode === 'grouped'
   const groupedSections = useMemo(() => {
     const groups = new Map<string, { label: string; color: string; wsId: string | null; items: TerminalInfo[] }>();
@@ -311,8 +395,30 @@ export function SessionsSidebar({
     }
   };
 
-  const renderStatusIndicator = (state: AgentState) => {
+  const renderStatusIndicator = (state: AgentState, compactBlocked = false) => {
     if (state === 'blocked') {
+      if (compactBlocked) {
+        return (
+          <span
+            title="Needs you"
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: 4,
+              background: 'var(--status-blocked-bg)',
+              color: 'var(--status-blocked)',
+              fontSize: 10,
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            !
+          </span>
+        );
+      }
       return (
         <span
           style={{
@@ -331,11 +437,13 @@ export function SessionsSidebar({
     }
     if (state === 'working') {
       return (
-        <Loader2
-          size={12}
-          className="spin-slow"
-          style={{ color: 'var(--status-working)', flexShrink: 0 }}
-        />
+        <span title="Working" style={{ display: 'inline-flex', flexShrink: 0 }}>
+          <Loader2
+            size={12}
+            className="spin-slow"
+            style={{ color: 'var(--status-working)' }}
+          />
+        </span>
       );
     }
     if (state === 'done') {
@@ -380,7 +488,7 @@ export function SessionsSidebar({
     );
   };
 
-  const renderAgentRow = (t: TerminalInfo, depth = 0) => {
+  const renderAgentRow = (t: TerminalInfo, depth = 0, compactBlocked = false) => {
     const ws = terminalToWorkspace.get(t.address) || null;
     const prog = detectProgram(t);
     const tabMeta = tabTerminalMap.get(t.address);
@@ -517,11 +625,11 @@ export function SessionsSidebar({
                 {age}
               </span>
             )}
-            {renderStatusIndicator(st)}
+            {renderStatusIndicator(st, compactBlocked)}
           </div>
         </div>
 
-        {hasKids && !kidsCollapsed && kids.map((child) => renderAgentRow(child, depth + 1))}
+        {hasKids && !kidsCollapsed && kids.map((child) => renderAgentRow(child, depth + 1, compactBlocked))}
       </div>
     );
   };
@@ -725,7 +833,54 @@ export function SessionsSidebar({
               {agentsOnly ? 'No active agents. Click "All" to see shells.' : 'No live sessions.'}
             </div>
           ) : sortMode === 'priority' ? (
-            topItems.map((t) => renderAgentRow(t, 0))
+            prioritySections.map((sec) => {
+              const collapsed = Boolean(collapsedGroups[sec.key]);
+              const mostUrgent = sec.items.reduce<AgentState>((acc, item) => {
+                const st = item.status?.state || 'idle';
+                return getStateRank(st) < getStateRank(acc) ? st : acc;
+              }, 'idle');
+              return (
+                <div key={sec.key} style={{ marginBottom: 4 }}>
+                  <div
+                    className="tree-row"
+                    style={{
+                      height: 22,
+                      paddingLeft: 4,
+                      paddingRight: 6,
+                      gap: 5,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setCollapsedGroups((c) => ({ ...c, [sec.key]: !c[sec.key] }))}
+                    title={collapsed ? `Expand ${sec.label}` : `Collapse ${sec.label}`}
+                  >
+                    {collapsed ? (
+                      <ChevronRight size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    ) : (
+                      <ChevronDown size={11} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    )}
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: sec.color,
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {sec.label}
+                    </span>
+                    {collapsed && mostUrgent !== 'idle' && renderStatusIndicator(mostUrgent, true)}
+                    <span className="mono tabular" style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                      {sec.items.length}
+                    </span>
+                  </div>
+                  {!collapsed &&
+                    sec.items.map((t) => renderAgentRow(t, 0, sec.statusKey === 'blocked'))}
+                </div>
+              );
+            })
           ) : (
             groupedSections.map(([key, grp]) => {
               const collapsed = Boolean(collapsedGroups[key]);
