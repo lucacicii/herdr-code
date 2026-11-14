@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Columns2, Plus, Rows2, Terminal as TerminalIcon, X } from 'lucide-react';
+import { Columns2, Maximize2, Plus, Rows2, Terminal as TerminalIcon, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { TerminalFontConfig } from '../lib/terminalFont';
 import { StatusBadge } from './StatusBadge';
@@ -315,7 +315,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
                     : 'Split 2nd Terminal Pane'
               }
             >
-              <Columns2 size={13} />
+              {splitMode ? <Maximize2 size={13} /> : <Columns2 size={13} />}
             </button>
           </div>
         </div>
