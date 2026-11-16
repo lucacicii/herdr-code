@@ -8,6 +8,7 @@ import {
   ListOrdered,
   Loader2,
   Pin,
+  RefreshCw,
   Terminal as TerminalIcon,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -660,14 +661,24 @@ export function SessionsSidebar({
           }}
         >
           <span>Spaces ({workspaces.length})</span>
-          <button
-            className="btn btn-ghost btn-icon"
-            style={{ width: 20, height: 20 }}
-            title="Add Workspace"
-            onClick={onOpenAddWorkspace}
-          >
-            <FolderPlus size={12} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <button
+              className="btn btn-ghost btn-icon"
+              style={{ width: 20, height: 20 }}
+              title="Refresh"
+              onClick={onTerminalsMutated}
+            >
+              <RefreshCw size={12} />
+            </button>
+            <button
+              className="btn btn-ghost btn-icon"
+              style={{ width: 20, height: 20 }}
+              title="Add Workspace"
+              onClick={onOpenAddWorkspace}
+            >
+              <FolderPlus size={12} />
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 6px 6px' }}>

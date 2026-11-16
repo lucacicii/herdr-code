@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AddWorkspaceModal } from './components/AddWorkspaceModal';
 import { CenterCodePane } from './components/CenterCodePane';
-import { LeftSidebar } from './components/LeftSidebar';
+import { FileDock } from './components/FileDock';
 import { NewTerminalModal } from './components/NewTerminalModal';
 import { QuickOpenModal } from './components/QuickOpenModal';
 import { RightTerminalPane, type RightTerminalPaneHandle } from './components/RightTerminalPane';
 import { SettingsModal } from './components/SettingsModal';
+import { SessionsSidebar } from './components/SessionsSidebar';
 import { TopBar } from './components/TopBar';
 import { api, initTokenFromEnv, setAuthToken, wsUrl } from './lib/api';
 import { formatLineAnchor } from './lib/references';
@@ -454,19 +455,13 @@ export function App() {
 
       <main className="wb-main">
         <aside className="wb-col" style={{ width: leftWidth, flexShrink: 0 }}>
-          <LeftSidebar
+          <SessionsSidebar
             workspaces={workspaces}
-            workspace={activeWorkspace}
+            activeWorkspaceId={activeWorkspace?.id || null}
             allTerminals={allTerminals}
             focusedTerminalAddress={focusedTerminalAddress}
             herdrSpaces={herdrSpaces}
             herdrColors={herdrColors}
-            repoStatus={repoStatus}
-            activeFilePath={activeFilePath}
-            diffMode={diffMode}
-            diffTarget={diffTarget}
-            activeDiffPath={activeDiffPath}
-            refreshSignal={refreshSignal}
             onSelectWorkspace={setActiveWorkspaceId}
             onFocusSession={(address, wsId) => {
               if (wsId && wsId !== activeWorkspaceId) {
@@ -476,14 +471,6 @@ export function App() {
             }}
             onOpenAddWorkspace={() => setShowAddWorkspace(true)}
             onTerminalsMutated={() => void refreshData()}
-            onOpenFile={(p) => void openFile(p)}
-            onOpenDiff={(p, m, t) => void openDiff(p, m, t)}
-            onChangeDiffParams={(m, t) => {
-              setDiffMode(m);
-              setDiffTarget(t);
-            }}
-            onInsertReferencePath={addFileRef}
-            onGitMutated={handleGitMutated}
           />
         </aside>
 
@@ -555,6 +542,25 @@ export function App() {
           </>
         )}
       </main>
+
+      <FileDock
+        workspace={activeWorkspace}
+        repoStatus={repoStatus}
+        activeFilePath={activeFilePath}
+        diffMode={diffMode}
+        diffTarget={diffTarget}
+        activeDiffPath={activeDiffPath}
+        refreshSignal={refreshSignal}
+        onOpenFile={(p) => void openFile(p)}
+        onOpenDiff={(p, m, t) => void openDiff(p, m, t)}
+        onChangeDiffParams={(m, t) => {
+          setDiffMode(m);
+          setDiffTarget(t);
+        }}
+        onInsertReferencePath={addFileRef}
+        onGitMutated={handleGitMutated}
+        onOpenQuickSearch={() => setShowQuickOpen(true)}
+      />
 
       {showQuickOpen && activeWorkspaceId && (
         <QuickOpenModal
