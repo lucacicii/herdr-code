@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -10,6 +10,7 @@ import {
   Pin,
   RefreshCw,
   Terminal as TerminalIcon,
+  X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { cleanTerminalTitle } from '../lib/terminalText';
@@ -161,6 +162,13 @@ function collectTabTerminals(herdrSpaces: HerdrSpace[]): Map<string, { space: He
   return map;
 }
 
+type CtxMenu =
+  | { kind: 'space'; ws: Workspace; x: number; y: number }
+  | { kind: 'terminal'; t: TerminalInfo; x: number; y: number };
+
+const MENU_WIDTH = 190;
+const MENU_HEIGHT = 74;
+
 export function SessionsSidebar({
   workspaces,
   activeWorkspaceId,
@@ -182,11 +190,33 @@ export function SessionsSidebar({
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
   const [now, setNow] = useState(() => Date.now());
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const dismiss = (e: MouseEvent) => {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      setCtxMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null);
+    };
+    const onScroll = () => setCtxMenu(null);
+    window.addEventListener('mousedown', dismiss);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('mousedown', dismiss);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [ctxMenu]);
 
   useEffect(() => {
     localStorage.setItem('herdr_code_agent_sort', sortMode);
@@ -397,6 +427,70 @@ export function SessionsSidebar({
     }
   };
 
+  const openCtxMenu = (
+    e: React.MouseEvent,
+    payload: { kind: 'space'; ws: Workspace } | { kind: 'terminal'; t: TerminalInfo }
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - MENU_WIDTH - 8);
+    const y = Math.min(e.clientY, window.innerHeight - MENU_HEIGHT - 8);
+    setCtxMenu(
+      payload.kind === 'space'
+        ? { kind: 'space', ws: payload.ws, x, y }
+        : { kind: 'terminal', t: payload.t, x, y }
+    );
+  };
+
+  const closeSession = async (t: TerminalInfo) => {
+    setCtxMenu(null);
+    const st = t.status?.state || 'idle';
+    const label = t.name || cleanTerminalTitle(t.title) || t.foreground?.name || t.address;
+    if ((st === 'working' || st === 'blocked') && !window.confirm(`Close ${st} session "${label}"?`)) {
+      return;
+    }
+    // Kill descendants first: a parent's sub-sessions would otherwise be orphaned
+    // outside the row that rendered them.
+    const doomed: TerminalInfo[] = [];
+    const walk = (addr: string) => {
+      for (const child of childrenByParent.get(addr) || []) {
+        walk(child.address);
+        doomed.push(child);
+      }
+    };
+    walk(t.address);
+    doomed.push(t);
+    for (const victim of doomed) {
+      try {
+        await api.killTerminal(victim.address);
+      } catch {
+        // already gone
+      }
+    }
+    onTerminalsMutated();
+  };
+
+  const closeSpace = async (ws: Workspace) => {
+    setCtxMenu(null);
+    const live = ws.terminals.filter((t) => t.state === 'live');
+    if (live.length > 0 && !window.confirm(`Close space "${ws.name}" and its ${live.length} session(s)?`)) {
+      return;
+    }
+    for (const t of live) {
+      try {
+        await api.killTerminal(t.address);
+      } catch {
+        // already gone
+      }
+    }
+    try {
+      await api.pinWorkspace(ws.id, false);
+    } catch {
+      // ignore
+    }
+    onTerminalsMutated();
+  };
+
   const renderStatusIndicator = (state: AgentState, compactBlocked = false) => {
     if (state === 'blocked') {
       if (compactBlocked) {
@@ -526,6 +620,7 @@ export function SessionsSidebar({
             gap: 6,
           }}
           onClick={() => onFocusSession(t.address, ws?.id || null)}
+          onContextMenu={(e) => openCtxMenu(e, { kind: 'terminal', t })}
           title={`${prog.label} · ${t.cwd}${t.title ? `\n${cleanTerminalTitle(t.title)}` : ''}`}
         >
           {depth > 0 ? (
@@ -683,7 +778,10 @@ export function SessionsSidebar({
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 6px 6px' }}>
+        <div
+          style={{ flex: 1, overflowY: 'auto', padding: '0 6px 6px' }}
+          onScroll={() => setCtxMenu(null)}
+        >
           {organizedSpaces.map(({ ws, isWorktree }) => {
             const isActive = ws.id === activeWorkspaceId;
             const firstAddr = ws.terminals[0]?.address;
@@ -707,6 +805,7 @@ export function SessionsSidebar({
                   gap: 8,
                 }}
                 onClick={() => onSelectWorkspace(ws.id)}
+                onContextMenu={(e) => openCtxMenu(e, { kind: 'space', ws })}
                 title={`${ws.path}${ws.branch ? ` (${ws.branch})` : ''}`}
               >
                 <span
@@ -840,7 +939,10 @@ export function SessionsSidebar({
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 6px 10px' }}>
+        <div
+          style={{ flex: 1, overflowY: 'auto', padding: '0 6px 10px' }}
+          onScroll={() => setCtxMenu(null)}
+        >
           {topItems.length === 0 ? (
             <div style={{ padding: 14, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
               {agentsOnly ? 'No active agents. Click "All" to see shells.' : 'No live sessions.'}
@@ -928,6 +1030,35 @@ export function SessionsSidebar({
           )}
         </div>
       </div>
+
+      {ctxMenu && (
+        <div
+          ref={menuRef}
+          className="ctx-menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y, width: MENU_WIDTH }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {ctxMenu.kind === 'space' ? (
+            <>
+              <div className="ctx-menu-label">{ctxMenu.ws.name}</div>
+              <button className="ctx-menu-item danger" onClick={() => void closeSpace(ctxMenu.ws)}>
+                <X size={12} />
+                Close Space
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="ctx-menu-label">
+                {ctxMenu.t.name || cleanTerminalTitle(ctxMenu.t.title) || ctxMenu.t.foreground?.name || 'Session'}
+              </div>
+              <button className="ctx-menu-item danger" onClick={() => void closeSession(ctxMenu.t)}>
+                <X size={12} />
+                {childrenByParent.get(ctxMenu.t.address)?.length ? 'Close Session + Sub-sessions' : 'Close Session'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
