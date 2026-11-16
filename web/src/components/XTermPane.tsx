@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { ImageAddon } from '@xterm/addon-image';
 import '@xterm/xterm/css/xterm.css';
 import { wsUrl } from '../lib/api';
 import { createFileLinkProvider } from '../lib/terminalLinks';
@@ -149,9 +150,12 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
     const linksAddon = new WebLinksAddon();
+    // Inline images: Sixel (DCS) + iTerm2 IIP (OSC 1337;File=...)
+    const imageAddon = new ImageAddon({ storageLimit: 64 });
 
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
+    term.loadAddon(imageAddon);
     term.open(container);
 
     const fileLinkDisp = term.registerLinkProvider(

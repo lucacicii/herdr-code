@@ -48,3 +48,23 @@ go build -o bin/herdr-code ./cmd/herdr-code
 - **Workspaces & File Explorer**: Auto-aggregates live terminals' Git roots and lets you add/pin local directories (`~/.config/herdr-code/workspaces.json`), with `Cmd+P` fuzzy search and `fsnotify` live reload.
 - **Code Reader & Git Diff Viewer**: Collapsible right CodeMirror 6 reader + Unified/Side-by-Side Git Diff (`working`, `staged`, `unstaged`, `branch`, `commit`) with Stage/Unstage/Discard file or hunk actions.
 - **Direct Code Referencing & Bidirectional Jump**: Drag files/folders to terminals, select line ranges or snippets (`@path#L10-25`), reference diff hunks, or write PR-style inline review comments directly into the focused terminal, and click `path:line` links in terminal output to jump to lines in the code pane.
+- **Inline Terminal Images**: Both `xterm.js` panes render Sixel and iTerm2 inline images (`OSC 1337;File=`), keeping up to 64 MB of decoded images per pane, so `wezterm imgcat`, `chafa --format sixel`, `img2sixel`, or `imgcat` output shows in place.
+
+## Terminal Images
+
+The panes speak both protocols — any program that emits them works:
+
+```sh
+wezterm imgcat screenshot.png   # iTerm2 inline images (OSC 1337)
+chafa --format sixel logo.png   # Sixel (DCS)
+```
+
+To emit the protocol from a script, note that iTerm2 requires `size` (raw byte count, not base64 length) and a base64-encoded `name`:
+
+```sh
+img=shot.png
+printf '\033]1337;File=inline=1;size=%s;name=%s:%s\a' \
+  "$(wc -c < "$img" | tr -d ' ')" \
+  "$(basename "$img" | base64 | tr -d '\n')" \
+  "$(base64 < "$img" | tr -d '\n')"
+```
