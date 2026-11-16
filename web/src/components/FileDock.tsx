@@ -59,6 +59,7 @@ export function FileDock({
   onOpenQuickSearch,
 }: FileDockProps) {
   const [mode, setMode] = useState<FileDockMode | null>(null);
+  const close = useCallback(() => setMode(null), []);
 
   // Dismiss on Escape, or when the active workspace disappears.
   useEffect(() => {
@@ -70,6 +71,19 @@ export function FileDock({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mode]);
+
+  // Dismiss when the pointer lands anywhere outside the panel and the dock.
+  useEffect(() => {
+    if (!mode) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('.float-panel') || target.closest('.float-dock')) return;
+      setMode(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, [mode]);
 
   useEffect(() => {
@@ -104,8 +118,14 @@ export function FileDock({
             diffTarget={diffTarget}
             activeDiffPath={activeDiffPath}
             refreshSignal={refreshSignal}
-            onOpenFile={onOpenFile}
-            onOpenDiff={onOpenDiff}
+            onOpenFile={(path) => {
+              onOpenFile(path);
+              close();
+            }}
+            onOpenDiff={(path, m, target) => {
+              onOpenDiff(path, m, target);
+              close();
+            }}
             onChangeDiffParams={onChangeDiffParams}
             onInsertReferencePath={onInsertReferencePath}
             onGitMutated={onGitMutated}
@@ -132,7 +152,14 @@ export function FileDock({
           )}
         </button>
         <div className="dock-sep" />
-        <button className="dock-btn" title="Find File (⌘P)" onClick={onOpenQuickSearch}>
+        <button
+          className="dock-btn"
+          title="Find File (⌘P)"
+          onClick={() => {
+            close();
+            onOpenQuickSearch();
+          }}
+        >
           <Search size={15} />
         </button>
       </div>
