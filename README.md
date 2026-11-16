@@ -41,6 +41,26 @@ go build -o bin/herdr-code ./cmd/herdr-code
 - `--open` — Automatically open the workbench URL in the default browser
 - `--version` — Print version and exit
 
+### Development (hot reload)
+
+`web/dist` is baked into the binary at compile time, so editing `web/src` requires
+*both* a Vite build and a Go build. During development skip that entirely:
+
+```bash
+./scripts/dev.sh
+```
+
+- Vite serves the UI on `http://127.0.0.1:5199` with HMR; `/api` and `/ws` are proxied
+  to the Go server, so terminals and live events work through the dev server.
+- The Go server runs on `127.0.0.1:7681`; touching any `.go` file under `cmd/` or
+  `internal/` rebuilds and restarts it, then reloads the browser tab (terminal
+  websockets cannot survive a server restart).
+- Override with `HERDR_DEV_PORT`, `HERDR_DEV_ADDR`, `HERDR_DEV_SOCKET`, or set
+  `HERDR_DEV_NO_RELOAD=1` to leave the tab alone.
+
+The dev server attaches to the same `hc` daemon as a production instance, so its
+terminals are the real ones; run it alongside `./bin/herdr-code` or instead of it.
+
 ## Key Features
 
 - **Shared `hc` Live Terminals**: Connects directly to `hc` framed JSON-RPC & PTY streams so terminals stay synchronized with the official Herdr app. Supports 1 or 2 horizontal/vertical split `xterm.js` panes, `working/blocked/idle/done` status tracking, `Ctrl+C`, kill, and launching new shell/agent terminals.
