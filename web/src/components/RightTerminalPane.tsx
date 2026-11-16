@@ -14,8 +14,11 @@ export interface RightTerminalPaneHandle {
 interface RightTerminalPaneProps {
   workspaceTerminals: TerminalInfo[];
   allTerminals: TerminalInfo[];
+  activeWorkspaceId?: string | null;
   activeWorkspacePath?: string;
-  focusRequest?: { address: string; seq: number } | null;
+  // wsId ties a focus request to the space that asked for it, so a request left
+  // over from a previous space can never surface another space's terminal.
+  focusRequest?: { address: string; wsId?: string | null; seq: number } | null;
   theme: 'light' | 'dark';
   terminalFont: TerminalFontConfig;
   onFocusedTerminalChange?: (address: string | null) => void;
@@ -30,6 +33,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
     {
       workspaceTerminals,
       allTerminals,
+      activeWorkspaceId,
       activeWorkspacePath,
       focusRequest,
       theme,
@@ -57,11 +61,20 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
     const pane0Ref = useRef<XTermPaneHandle>(null);
     const pane1Ref = useRef<XTermPaneHandle>(null);
 
+    // A freshly created terminal can land here before the workspace snapshot
+    // includes it, so the requested terminal alone may stand in for the space's
+    // list — never the whole allTerminals set, which would leak every space's
+    // sessions into this pane. Requests made for another space are ignored.
+    const requestedTerm =
+      focusRequest && (focusRequest.wsId == null || focusRequest.wsId === activeWorkspaceId)
+        ? allTerminals.find((t) => t.address === focusRequest.address) || null
+        : null;
+
     const list =
       workspaceTerminals.length > 0
         ? workspaceTerminals
-        : focusRequest && allTerminals.some((t) => t.address === focusRequest.address)
-          ? allTerminals
+        : requestedTerm
+          ? [requestedTerm]
           : workspaceTerminals;
 
     useEffect(() => {
@@ -110,6 +123,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
 
     useEffect(() => {
       if (!focusRequest) return;
+      if (focusRequest.wsId != null && focusRequest.wsId !== activeWorkspaceId) return;
       const addr = focusRequest.address;
       if (splitMode && secondaryId === addr) {
         setFocusedSlot(1);
