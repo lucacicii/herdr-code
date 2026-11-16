@@ -100,6 +100,10 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		"type":            "ready",
 		"terminal":        stream.Meta.Terminal,
 		"automatic_input": stream.Meta.AutomaticInput,
+		// Authoritative PTY grid: the terminal is shared with every other attached
+		// client, so the browser must render this size instead of guessing its own.
+		"cols": stream.Meta.Terminal.Cols,
+		"rows": stream.Meta.Terminal.Rows,
 	})
 
 	done := make(chan struct{})
@@ -155,6 +159,9 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// WebSocket -> hc
+	// The PTY grid is shared by all attached clients; identical resize frames only
+	// cause needless full-screen repaints of the hosted TUI.
+	lastCols, lastRows := cols, rows
 	for {
 		msgType, data, err := ws.ReadMessage()
 		if err != nil {
@@ -189,7 +196,8 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 			}
 			switch ctrl.Type {
 			case "resize":
-				if ctrl.Cols > 0 && ctrl.Rows > 0 {
+				if ctrl.Cols > 0 && ctrl.Rows > 0 && (ctrl.Cols != lastCols || ctrl.Rows != lastRows) {
+					lastCols, lastRows = ctrl.Cols, ctrl.Rows
 					_ = stream.Resize(ctrl.Cols, ctrl.Rows)
 				}
 			case "focus":

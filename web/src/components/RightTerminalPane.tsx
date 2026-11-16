@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Columns2, Maximize2, Plus, Rows2, Terminal as TerminalIcon, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { cleanTerminalTitle } from '../lib/terminalText';
 import type { TerminalFontConfig } from '../lib/terminalFont';
 import { StatusBadge } from './StatusBadge';
 import { XTermPane, type XTermPaneHandle } from './XTermPane';
@@ -191,7 +192,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
 
     const handleKillTerminal = async (term: TerminalInfo, e: React.MouseEvent) => {
       e.stopPropagation();
-      const label = term.name || term.title || term.foreground?.name || term.address;
+      const label = term.name || cleanTerminalTitle(term.title) || term.foreground?.name || term.address;
       if (!window.confirm(`Close terminal "${label}"?`)) {
         return;
       }
@@ -243,7 +244,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
               const isPrimary = t.address === primaryId;
               const isSecondary = splitMode && t.address === secondaryId;
               const isActive = isPrimary || isSecondary;
-              const label = t.name || t.title || t.foreground?.name || t.address;
+              const label = t.name || cleanTerminalTitle(t.title) || t.foreground?.name || t.address;
               const st = t.status?.state || 'idle';
               return (
                 <div
@@ -390,7 +391,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
                       >
                         {list.map((t) => (
                           <option key={t.address} value={t.address}>
-                            {t.name || t.title || t.foreground?.name || t.address}
+                            {t.name || cleanTerminalTitle(t.title) || t.foreground?.name || t.address}
                           </option>
                         ))}
                       </select>
@@ -448,7 +449,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
                       >
                         {list.map((t) => (
                           <option key={t.address} value={t.address}>
-                            {t.name || t.title || t.foreground?.name || t.address}
+                            {t.name || cleanTerminalTitle(t.title) || t.foreground?.name || t.address}
                           </option>
                         ))}
                       </select>

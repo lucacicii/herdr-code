@@ -74,6 +74,38 @@ const DARK_XTERM_THEME = {
 
 const encoder = new TextEncoder();
 
+// Only tell the shared PTY about a grid we actually changed to; identical or
+// per-frame resize frames make every attached viewer fight over the size and
+// force the agent TUI to repaint its whole screen.
+function pushSize(
+  term: Terminal,
+  socket: WebSocket | null,
+  sentRef: { current: { cols: number; rows: number } | null }
+) {
+  if (!socket || socket.readyState !== WebSocket.OPEN || !term.cols || !term.rows) return;
+  const prev = sentRef.current;
+  if (prev && prev.cols === term.cols && prev.rows === term.rows) return;
+  sentRef.current = { cols: term.cols, rows: term.rows };
+  socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+}
+
+function adoptRemoteSize(
+  term: Terminal,
+  msg: { cols?: number; rows?: number },
+  sentRef: { current: { cols: number; rows: number } | null }
+) {
+  const cols = Number(msg.cols) || 0;
+  const rows = Number(msg.rows) || 0;
+  if (cols <= 0 || rows <= 0) return;
+  if (cols === term.cols && rows === term.rows) {
+    sentRef.current = { cols, rows };
+    return;
+  }
+  // Record it as "already sent" so the ResizeObserver/fit path never echoes it back.
+  sentRef.current = { cols, rows };
+  term.resize(cols, rows);
+}
+
 export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XTermPane(
   { terminal, theme, fontFamily, fontSize, lineHeight, focused, onFocus, onOpenFileLine, onPastePath },
   ref
@@ -82,6 +114,8 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const sentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connState, setConnState] = useState<'connecting' | 'open' | 'closed'>('connecting');
   const [dragOver, setDragOver] = useState(false);
   const onOpenFileLineRef = useRef(onOpenFileLine);
@@ -115,6 +149,15 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     term.options.theme = theme === 'dark' ? DARK_XTERM_THEME : LIGHT_XTERM_THEME;
   }, [theme]);
 
+  // Herdr's PTY grid is shared: follow the size the terminal actually has. This is
+  // what keeps the hosted TUI's absolute-addressed status line on rows that exist,
+  // instead of leaving half-redrawn, duplicated frames at the bottom of the pane.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || !terminal.cols || !terminal.rows) return;
+    adoptRemoteSize(term, { cols: terminal.cols, rows: terminal.rows }, sentSizeRef);
+  }, [terminal.cols, terminal.rows]);
+
   useEffect(() => {
     const term = termRef.current;
     const fitAddon = fitAddonRef.current;
@@ -125,10 +168,7 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     if (fitAddon) {
       try {
         fitAddon.fit();
-        const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-        }
+        pushSize(term, wsRef.current, sentSizeRef);
       } catch {
         // ignore resize errors
       }
@@ -173,9 +213,12 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     termRef.current = term;
     setConnState('connecting');
 
+    const claimCols = term.cols || 100;
+    const claimRows = term.rows || 30;
+    sentSizeRef.current = { cols: claimCols, rows: claimRows };
     const socket = new WebSocket(
       wsUrl(
-        `/ws/terminal/${encodeURIComponent(terminal.address)}?cols=${term.cols || 100}&rows=${term.rows || 30}&history=1000`
+        `/ws/terminal/${encodeURIComponent(terminal.address)}?cols=${claimCols}&rows=${claimRows}&history=1000`
       )
     );
     socket.binaryType = 'arraybuffer';
@@ -185,7 +228,7 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
       setConnState('open');
       try {
         fitAddon.fit();
-        socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        pushSize(term, socket, sentSizeRef);
       } catch {
         // ignore
       }
@@ -206,6 +249,12 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
             term.writeln(`\r\n[herdr-code] error: ${msg.message}`);
           } else if (msg.type === 'closed') {
             setConnState('closed');
+          } else if (msg.type === 'ready' || msg.type === 'resize') {
+            // Herdr terminals are shared: the PTY grid belongs to whoever resized it
+            // last, not to this pane. Adopt it, otherwise the TUI's absolute cursor
+            // addressing (its status line) lands on rows we do not have and leaves
+            // duplicated, flickering frames at the bottom of the pane.
+            adoptRemoteSize(term, msg, sentSizeRef);
           }
         } catch {
           // ignore
@@ -236,20 +285,36 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
       socket.send(buf);
     });
 
+    // Fit only when *our* container actually changed. Refitting unconditionally also
+    // fires for layout noise (and after we adopt a remote grid), which would push our
+    // size back to the shared PTY and make every attached viewer fight over it.
+    let lastBoxW = Math.round(container.clientWidth);
+    let lastBoxH = Math.round(container.clientHeight);
     const ro = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      const w = Math.round(container.clientWidth);
+      const h = Math.round(container.clientHeight);
+      if (w === lastBoxW && h === lastBoxH) return;
+      lastBoxW = w;
+      lastBoxH = h;
+      if (fitTimerRef.current !== null) clearTimeout(fitTimerRef.current);
+      fitTimerRef.current = setTimeout(() => {
+        fitTimerRef.current = null;
+        try {
+          fitAddon.fit();
+          pushSize(term, socket, sentSizeRef);
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
-      }
+      }, 120);
     });
     ro.observe(container);
 
     return () => {
       ro.disconnect();
+      if (fitTimerRef.current !== null) {
+        clearTimeout(fitTimerRef.current);
+        fitTimerRef.current = null;
+      }
       dataDisp.dispose();
       binDisp.dispose();
       fileLinkDisp.dispose();

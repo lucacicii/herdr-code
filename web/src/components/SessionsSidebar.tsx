@@ -12,6 +12,7 @@ import {
   Terminal as TerminalIcon,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { cleanTerminalTitle } from '../lib/terminalText';
 import type { AgentState, HerdrSpace, TerminalInfo, Workspace } from '../types/api';
 
 interface SessionsSidebarProps {
@@ -505,12 +506,13 @@ export function SessionsSidebar({
       t.name ||
       tabMeta?.tabName ||
       prog.label;
-    const secondary =
+    const secondary = cleanTerminalTitle(
       t.status?.msg ||
-      t.name ||
-      tabMeta?.tabName ||
-      (t.title && t.title !== primaryName ? t.title : '') ||
-      '';
+        t.name ||
+        tabMeta?.tabName ||
+        (t.title && t.title !== primaryName ? t.title : '') ||
+        ''
+    );
     const age = formatAge(t.status_ms || t.created_ms, now);
 
     return (
@@ -524,7 +526,7 @@ export function SessionsSidebar({
             gap: 6,
           }}
           onClick={() => onFocusSession(t.address, ws?.id || null)}
-          title={`${prog.label} · ${t.cwd}${t.title ? `\n${t.title}` : ''}`}
+          title={`${prog.label} · ${t.cwd}${t.title ? `\n${cleanTerminalTitle(t.title)}` : ''}`}
         >
           {depth > 0 ? (
             <span

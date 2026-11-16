@@ -117,6 +117,9 @@ export function App() {
     };
   }, []);
 
+  const dataSignatureRef = useRef('');
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const refreshData = useCallback(async () => {
     try {
       const h = await api.health();
@@ -128,6 +131,20 @@ export function App() {
         api.herdrSpaces().catch(() => ({ spaces: [] as HerdrSpace[], colors: {} as Record<string, string> })),
       ]);
       setAuthNeeded(false);
+      // hc pushes ~25 events/s (agent status, spinner frames, PTY activity). Most of
+      // them carry no change our tree cares about; re-rendering the whole app on each
+      // one makes rows, tabs and the terminal pane strobe. Only commit state when the
+      // snapshot actually differs.
+      const signature = JSON.stringify([
+        wsRes.workspaces,
+        termRes.terminals || [],
+        herdrRes.spaces || [],
+        herdrRes.colors || {},
+      ]);
+      if (signature === dataSignatureRef.current) {
+        return;
+      }
+      dataSignatureRef.current = signature;
       setWorkspaces(wsRes.workspaces);
       setAllTerminals(termRes.terminals || []);
       setHerdrSpaces(herdrRes.spaces || []);
@@ -148,6 +165,27 @@ export function App() {
   useEffect(() => {
     void refreshData();
   }, [refreshData]);
+
+  // Coalesce the hc event firehose into at most one refresh per burst window.
+  const refreshDataRef = useRef(refreshData);
+  refreshDataRef.current = refreshData;
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current !== null) return;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      void refreshDataRef.current();
+    }, 250);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Option A: Auto-check Herdr dependencies on initial load; if missing or daemon stopped, open Settings automatically
   useEffect(() => {
@@ -227,7 +265,7 @@ export function App() {
         try {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'hc.connected' || msg.type === 'hc.disconnected' || msg.type === 'hc.snapshot' || msg.type === 'hc.event') {
-            void refreshData();
+            scheduleRefresh();
           } else if (msg.type === 'fs.changed') {
             setRefreshSignal((n) => n + 1);
             void refreshGit();
@@ -261,7 +299,7 @@ export function App() {
       if (retryTimer) clearTimeout(retryTimer);
       ws?.close();
     };
-  }, [authNeeded, refreshData, refreshGit, activeWorkspaceId]);
+  }, [authNeeded, refreshData, refreshGit, activeWorkspaceId, scheduleRefresh]);
 
   // Cmd+P quick open
   useEffect(() => {
