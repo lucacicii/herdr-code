@@ -58,7 +58,11 @@ export function App() {
   const [herdrSpaces, setHerdrSpaces] = useState<HerdrSpace[]>([]);
   const [herdrColors, setHerdrColors] = useState<Record<string, string>>({});
   const [focusedTerminalAddress, setFocusedTerminalAddress] = useState<string | null>(null);
-  const [terminalFocusReq, setTerminalFocusReq] = useState<{ address: string; seq: number } | null>(null);
+  const [terminalFocusReq, setTerminalFocusReq] = useState<{
+    address: string;
+    wsId: string | null;
+    seq: number;
+  } | null>(null);
   const [repoStatus, setRepoStatus] = useState<RepoStatus | null>(null);
 
   const [tabs, setTabs] = useState<CenterTab[]>([]);
@@ -505,7 +509,11 @@ export function App() {
               if (wsId && wsId !== activeWorkspaceId) {
                 setActiveWorkspaceId(wsId);
               }
-              setTerminalFocusReq((prev) => ({ address, seq: (prev?.seq || 0) + 1 }));
+              setTerminalFocusReq((prev) => ({
+                address,
+                wsId: wsId ?? activeWorkspaceId,
+                seq: (prev?.seq || 0) + 1,
+              }));
             }}
             onOpenAddWorkspace={() => setShowAddWorkspace(true)}
             onTerminalsMutated={() => void refreshData()}
@@ -524,6 +532,7 @@ export function App() {
             ref={terminalPaneRef}
             workspaceTerminals={activeWorkspace?.terminals || []}
             allTerminals={allTerminals}
+            activeWorkspaceId={activeWorkspace?.id ?? null}
             activeWorkspacePath={activeWorkspace?.path}
             focusRequest={terminalFocusReq}
             theme={theme}
@@ -624,7 +633,11 @@ export function App() {
           onCreated={(term) => {
             void refreshData().then(() => {
               if (term.address) {
-                setTerminalFocusReq({ address: term.address, seq: Date.now() });
+                setTerminalFocusReq({
+                  address: term.address,
+                  wsId: activeWorkspace?.id ?? null,
+                  seq: Date.now(),
+                });
               }
             });
           }}
