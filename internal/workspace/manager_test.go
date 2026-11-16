@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lucacicii/herdr-code/internal/hc"
 )
 
 func TestResolveSafePathAndPersist(t *testing.T) {
@@ -44,5 +46,32 @@ func TestResolveSafePathAndPersist(t *testing.T) {
 	list, err := mgr2.List(context.Background())
 	if err != nil || len(list) != 1 {
 		t.Fatalf("expected 1 persisted workspace, got %d (err=%v)", len(list), err)
+	}
+}
+
+func TestPinnedWorkspaceKeepsTerminalInCreationWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(nil, filepath.Join(t.TempDir(), "workspaces.json"))
+	ws, err := mgr.Add(context.Background(), dir, false)
+	if err != nil {
+		t.Fatalf("Add workspace failed: %v", err)
+	}
+	wsMap := map[string]*Workspace{ws.Path: {ID: ws.ID, Path: ws.Path}}
+
+	// A terminal created in the workspace keeps it after its program changes directory.
+	moved := hc.Terminal{Cwd: t.TempDir(), Labels: map[string]string{WorkspaceLabel: ws.Path}}
+	if got := pinnedWorkspace(wsMap, moved); got == nil || got.ID != ws.ID {
+		t.Fatalf("expected terminal pinned to %s, got %+v", ws.ID, got)
+	}
+
+	if got := pinnedWorkspace(wsMap, hc.Terminal{Cwd: ws.Path}); got != nil {
+		t.Fatalf("expected no pin without a workspace label, got %+v", got)
+	}
+	if got := pinnedWorkspace(wsMap, hc.Terminal{Labels: map[string]string{WorkspaceLabel: "/nonexistent/path"}}); got != nil {
+		t.Fatalf("expected no pin for an unknown workspace path, got %+v", got)
+	}
+
+	if got := mgr.WorkspacePathForCwd(context.Background(), dir); got != ws.Path {
+		t.Fatalf("expected WorkspacePathForCwd(%s) = %s, got %s", dir, ws.Path, got)
 	}
 }

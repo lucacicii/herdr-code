@@ -21,6 +21,8 @@ func TestOriginAndTokenAuthAndWorkspaceAPI(t *testing.T) {
 		SocketPath: filepath.Join(t.TempDir(), "nonexistent.sock"),
 		Token:      "secret-token",
 		Version:    "test",
+		// Keep the test off the real ~/.config/herdr-code/workspaces.json.
+		WorkspaceConfigPath: filepath.Join(t.TempDir(), "workspaces.json"),
 	})
 	defer srv.Close()
 

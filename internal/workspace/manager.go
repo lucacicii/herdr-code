@@ -311,6 +311,44 @@ func (m *Manager) SetPinned(id string, pinned bool) error {
 	return m.saveLocked()
 }
 
+// WorkspaceLabel marks a terminal's owning workspace path on the terminal itself, so
+// its tab stays in the workspace it was created in when the program later changes cwd.
+const WorkspaceLabel = "workspace"
+
+// pinnedWorkspace returns the workspace a terminal was created in, if it still exists.
+func pinnedWorkspace(wsMap map[string]*Workspace, t hc.Terminal) *Workspace {
+	path := t.Labels[WorkspaceLabel]
+	if path == "" {
+		return nil
+	}
+	canon, err := canonicalDir(path)
+	if err != nil {
+		return nil
+	}
+	return wsMap[canon]
+}
+
+// WorkspacePathForCwd returns the canonical path of the workspace that owns dir:
+// the saved workspace whose path matches it, else its git root, else dir itself.
+func (m *Manager) WorkspacePathForCwd(ctx context.Context, dir string) string {
+	canon, err := canonicalDir(dir)
+	if err != nil {
+		return ""
+	}
+	root := m.resolveGitRoot(ctx, canon)
+	if root == "" {
+		root = canon
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, sw := range m.saved {
+		if sw.Path == canon || sw.Path == root {
+			return sw.Path
+		}
+	}
+	return root
+}
+
 func (m *Manager) List(ctx context.Context) ([]Workspace, error) {
 	var terminals []hc.Terminal
 	if m.hc != nil {
@@ -342,36 +380,39 @@ func (m *Manager) List(ctx context.Context) ([]Workspace, error) {
 	}
 
 	for _, t := range terminals {
-		cwd := t.Cwd
-		if t.Foreground != nil && t.Foreground.Cwd != "" {
-			cwd = t.Foreground.Cwd
-		}
-		canon, err := canonicalDir(cwd)
-		if err != nil {
-			continue
-		}
-		root := m.resolveGitRoot(ctx, canon)
-		isRepo := root != ""
-		if !isRepo {
-			root = canon
-		}
-		ws, ok := wsMap[root]
-		if !ok {
-			id := workspaceIDForPath(root)
-			ws = &Workspace{
-				ID:        id,
-				Name:      filepath.Base(root),
-				Path:      root,
-				IsGitRepo: isRepo,
-				Pinned:    false,
-				Auto:      true,
-				Terminals: []hc.Terminal{},
-				UpdatedMs: int64(t.CreatedMs),
+		ws := pinnedWorkspace(wsMap, t)
+		if ws == nil {
+			cwd := t.Cwd
+			if t.Foreground != nil && t.Foreground.Cwd != "" {
+				cwd = t.Foreground.Cwd
 			}
-			wsMap[root] = ws
-			m.mu.Lock()
-			m.byID[id] = root
-			m.mu.Unlock()
+			canon, err := canonicalDir(cwd)
+			if err != nil {
+				continue
+			}
+			root := m.resolveGitRoot(ctx, canon)
+			isRepo := root != ""
+			if !isRepo {
+				root = canon
+			}
+			ws = wsMap[root]
+			if ws == nil {
+				id := workspaceIDForPath(root)
+				ws = &Workspace{
+					ID:        id,
+					Name:      filepath.Base(root),
+					Path:      root,
+					IsGitRepo: isRepo,
+					Pinned:    false,
+					Auto:      true,
+					Terminals: []hc.Terminal{},
+					UpdatedMs: int64(t.CreatedMs),
+				}
+				wsMap[root] = ws
+				m.mu.Lock()
+				m.byID[id] = root
+				m.mu.Unlock()
+			}
 		}
 		ws.Terminals = append(ws.Terminals, t)
 		ws.Counts.Total++

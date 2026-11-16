@@ -30,6 +30,8 @@ type Config struct {
 	StaticFS       fs.FS
 	Version        string
 	AllowedOrigins []string
+	// WorkspaceConfigPath overrides where workspace pins persist (default: ~/.config/herdr-code/workspaces.json).
+	WorkspaceConfigPath string
 }
 
 type Server struct {
@@ -45,7 +47,7 @@ type Server struct {
 func New(cfg Config) *Server {
 	hcClient := hc.NewClient(cfg.SocketPath)
 	hub := NewEventHub()
-	wsMgr := workspace.NewManager(hcClient, "")
+	wsMgr := workspace.NewManager(hcClient, cfg.WorkspaceConfigPath)
 	watcher := appfs.NewWatcher(func(wsID, root string, paths []string) {
 		hub.Broadcast(map[string]any{
 			"type":         "fs.changed",
@@ -559,9 +561,25 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cwd := body.Cwd
-	if cwd == "" && body.WorkspaceID != "" {
+	workspacePath := ""
+	if body.WorkspaceID != "" {
 		if ws, err := s.workspaces.ResolveWorkspace(r.Context(), body.WorkspaceID); err == nil {
-			cwd = ws.Path
+			workspacePath = ws.Path
+			if cwd == "" {
+				cwd = ws.Path
+			}
+		}
+	}
+	if workspacePath == "" && cwd != "" {
+		workspacePath = s.workspaces.WorkspacePathForCwd(r.Context(), cwd)
+	}
+	labels := body.Labels
+	if workspacePath != "" {
+		if labels == nil {
+			labels = make(map[string]string, 1)
+		}
+		if _, ok := labels[workspace.WorkspaceLabel]; !ok {
+			labels[workspace.WorkspaceLabel] = workspacePath
 		}
 	}
 	if len(body.Argv) == 0 {
@@ -592,7 +610,7 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 		Cwd:    cwd,
 		Name:   body.Name,
 		Keep:   body.Keep,
-		Labels: body.Labels,
+		Labels: labels,
 		Size:   size,
 	})
 	if err != nil {
