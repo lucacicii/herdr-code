@@ -6,6 +6,7 @@ import { ImageAddon } from '@xterm/addon-image';
 import '@xterm/xterm/css/xterm.css';
 import { wsUrl } from '../lib/api';
 import { createFileLinkProvider } from '../lib/terminalLinks';
+import { InlineImageStream } from '../lib/terminalImages';
 import type { TerminalInfo } from '../types/api';
 
 export interface XTermPaneHandle {
@@ -224,6 +225,9 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     socket.binaryType = 'arraybuffer';
     wsRef.current = socket;
 
+    const images = new InlineImageStream();
+    let writeChain: Promise<void> | null = null;
+
     socket.onopen = () => {
       setConnState('open');
       try {
@@ -238,7 +242,20 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
       if (ev.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(ev.data);
         if (bytes.length > 1 && bytes[0] === 0x00) {
-          term.write(bytes.subarray(1));
+          const parts = images.write(bytes.subarray(1));
+          if (Array.isArray(parts) && !writeChain) {
+            for (const part of parts) term.write(part);
+          } else {
+            // A WebP payload is being re-encoded: hold later chunks so the
+            // picture keeps its place in the transcript.
+            const queued = (writeChain ?? Promise.resolve()).then(async () => {
+              for (const part of await parts) term.write(part);
+            });
+            writeChain = queued;
+            void queued.then(() => {
+              if (writeChain === queued) writeChain = null;
+            });
+          }
         }
         return;
       }

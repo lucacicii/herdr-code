@@ -88,3 +88,7 @@ printf '\033]1337;File=inline=1;size=%s;name=%s:%s\a' \
   "$(basename "$img" | base64 | tr -d '\n')" \
   "$(base64 < "$img" | tr -d '\n')"
 ```
+
+The panes are tolerant of loose emitters: a sequence without `size` gets one filled in from the decoded payload, and WebP payloads (what `omp` sends) are re-encoded to PNG, since the image addon only decodes PNG, JPEG and GIF. Sequences split across WebSocket frames are reassembled before the rewrite.
+
+Panes are also spawned with a de-Ghostty'd environment (`TERM_PROGRAM=herdr-code`, `PI_FORCE_IMAGE_PROTOCOL=iterm2`, and the inherited `GHOSTTY_*`, `KITTY_*`, `WEZTERM_*`, `ITERM_SESSION_ID`, `VSCODE_PID`, `ALACRITTY_WINDOW_ID`, `WT_SESSION`, `LC_TERMINAL` variables removed) so TUI agents advertise iTerm2 images instead of Kitty graphics, which `xterm.js` cannot draw.

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -24,9 +25,9 @@ import (
 )
 
 type Config struct {
-	Addr       string
-	SocketPath string
-	Token      string
+	Addr           string
+	SocketPath     string
+	Token          string
 	StaticFS       fs.FS
 	Version        string
 	AllowedOrigins []string
@@ -544,6 +545,45 @@ func (s *Server) handleListTerminals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// Terminal programs choose a graphics protocol from the environment they
+// inherit, and a pane inherits whatever launched the daemon. Started from
+// Ghostty, every agent answers with Kitty graphics frames that xterm.js
+// discards, so images vanish. Panes draw Sixel and iTerm2 inline images, so
+// children get that identity and ask for the protocol explicitly.
+var (
+	paneEnvInherited = []string{
+		"TERM_PROGRAM", "TERM_PROGRAM_VERSION", "GHOSTTY_RESOURCES_DIR", "GHOSTTY_BIN_DIR",
+		"KITTY_WINDOW_ID", "KITTY_LISTEN_ON", "WEZTERM_PANE", "WEZTERM_EXECUTABLE",
+		"ITERM_SESSION_ID", "ITERM_PROFILE", "VSCODE_PID", "ALACRITTY_WINDOW_ID",
+		"WT_SESSION", "LC_TERMINAL", "LC_TERMINAL_VERSION",
+	}
+	paneEnvAssigned = []struct{ Key, Value string }{
+		{"TERM_PROGRAM", "herdr-code"},
+		{"PI_FORCE_IMAGE_PROTOCOL", "iterm2"},
+	}
+)
+
+// withPaneTerminalEnv prefixes argv with env(1) so the launched program sees a
+// terminal identity that matches what the pane can actually render.
+func withPaneTerminalEnv(argv []string) []string {
+	if len(argv) == 0 {
+		return argv
+	}
+	envPath, err := exec.LookPath("env")
+	if err != nil {
+		return argv
+	}
+	wrapped := make([]string, 0, len(argv)+2*len(paneEnvInherited)+len(paneEnvAssigned)+1)
+	wrapped = append(wrapped, envPath)
+	for _, name := range paneEnvInherited {
+		wrapped = append(wrapped, "-u", name)
+	}
+	for _, kv := range paneEnvAssigned {
+		wrapped = append(wrapped, kv.Key+"="+kv.Value)
+	}
+	return append(wrapped, argv...)
+}
+
 func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		WorkspaceID string            `json:"workspace_id"`
@@ -605,7 +645,7 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 		size = &hc.RunSize{Cols: body.Cols, Rows: body.Rows}
 	}
 	res, err := s.hc.RunTerminal(r.Context(), hc.RunParams{
-		Argv:   body.Argv,
+		Argv:   withPaneTerminalEnv(body.Argv),
 		Line:   body.Line,
 		Cwd:    cwd,
 		Name:   body.Name,
