@@ -8,6 +8,8 @@ interface AddWorkspaceModalProps {
   onAdded: (ws: Workspace) => void;
 }
 
+const LAST_DIR_KEY = 'herdr_code_last_dir';
+
 export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) {
   const [pathInput, setPathInput] = useState('');
   const [currentDir, setCurrentDir] = useState('');
@@ -16,7 +18,7 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const browse = async (target: string) => {
+  const browse = async (target: string): Promise<boolean> => {
     try {
       const res = await api.browseLocalDirs(target);
       setCurrentDir(res.current);
@@ -24,13 +26,24 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
       setDirs(res.dirs);
       setPathInput(res.current);
       setError('');
+      localStorage.setItem(LAST_DIR_KEY, res.current);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     }
   };
 
   useEffect(() => {
-    void browse('~');
+    // Reopen where the user left off; fall back to home if it vanished.
+    const last = localStorage.getItem(LAST_DIR_KEY);
+    if (!last) {
+      void browse('~');
+      return;
+    }
+    void browse(last).then((ok) => {
+      if (!ok) void browse('~');
+    });
   }, []);
 
   const handleSubmit = async () => {
@@ -39,6 +52,7 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
     setError('');
     try {
       const res = await api.addWorkspace(pathInput.trim(), true);
+      localStorage.setItem(LAST_DIR_KEY, pathInput.trim());
       onAdded(res.workspace);
       onClose();
     } catch (err) {
