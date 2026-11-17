@@ -104,6 +104,12 @@ func ReadFile(root, relPath string) (*FileContent, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ReadFileAt(target, filepath.ToSlash(filepath.Clean(relPath)))
+}
+
+// ReadFileAt loads an already-resolved path. Terminal links may point anywhere on
+// disk, so the caller resolves the path and this only reads it.
+func ReadFileAt(target, displayPath string) (*FileContent, error) {
 	info, err := os.Stat(target)
 	if err != nil {
 		return nil, err
@@ -144,7 +150,7 @@ func ReadFile(root, relPath string) (*FileContent, error) {
 		}
 	}
 
-	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
+	cleanRel := filepath.ToSlash(filepath.Clean(displayPath))
 	return &FileContent{
 		Path:      cleanRel,
 		Content:   content,
