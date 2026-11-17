@@ -939,15 +939,20 @@ export function SessionsSidebar({
                     </span>
                   )}
                   <button
-                    className="icon-btn"
+                    className="btn btn-ghost btn-icon"
                     title="Past sessions in this space"
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenHistory(ws.id);
                     }}
-                    style={{ opacity: isActive ? 1 : 0.55 }}
+                    style={{
+                      width: 18,
+                      height: 18,
+                      color: 'var(--text-muted)',
+                      opacity: isActive ? 1 : 0.7,
+                    }}
                   >
-                    <History size={12} />
+                    <History size={10} />
                   </button>
                 </div>
               </div>
