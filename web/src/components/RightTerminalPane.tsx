@@ -23,7 +23,7 @@ interface RightTerminalPaneProps {
   terminalFont: TerminalFontConfig;
   onFocusedTerminalChange?: (address: string | null) => void;
   onAddPathChip: (path: string) => void;
-  onOpenFileLine: (path: string, line: number) => void;
+  onOpenFileLine: (path: string, line?: number) => void;
   onOpenNewTerminal: () => void;
   onTerminalsMutated: () => void;
 }

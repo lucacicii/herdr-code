@@ -180,6 +180,8 @@ func (s *Server) registerRoutes() {
 
 	// Local directory picker helper
 	s.mux.HandleFunc("GET /api/fs/browse", s.authJSON(s.handleBrowseLocalDirs))
+	// Terminal links can point outside the workspace root.
+	s.mux.HandleFunc("GET /api/fs/file", s.authJSON(s.handleLocalFile))
 
 	// Workspace files & search
 	s.mux.HandleFunc("GET /api/workspaces/{id}/tree", s.authJSON(s.handleWorkspaceTree))
@@ -491,6 +493,25 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 	}
 	rel := r.URL.Query().Get("path")
 	file, err := appfs.ReadFile(ws.Path, rel)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, file)
+}
+
+func (s *Server) handleLocalFile(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimSpace(r.URL.Query().Get("path"))
+	if raw == "" {
+		writeJSONError(w, http.StatusBadRequest, errors.New("path required"))
+		return
+	}
+	abs, err := filepath.Abs(expandTilde(raw))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	file, err := appfs.ReadFileAt(abs, raw)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return

@@ -360,7 +360,10 @@ export function App() {
 
   const openFile = useCallback(
     async (path: string, line?: number) => {
-      if (!activeWorkspaceId) return;
+      // Terminal links may point outside the workspace (absolute or ~), which the
+      // server reads directly instead of resolving against the workspace root.
+      const outside = path.startsWith('/') || path.startsWith('~');
+      if (!activeWorkspaceId && !outside) return;
       const tabId = `code:${path}`;
       setTabs((prev) => {
         const existing = prev.find((t) => t.id === tabId);
@@ -380,7 +383,9 @@ export function App() {
       setCodePaneOpen(true);
 
       try {
-        const fc = await api.readFile(activeWorkspaceId, path);
+        const fc = outside
+          ? await api.readFileAt(path)
+          : await api.readFile(activeWorkspaceId as string, path);
         setFilesByPath((prev) => ({ ...prev, [path]: fc }));
       } catch {
         // ignore unreadable path (e.g. broken terminal link)

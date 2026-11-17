@@ -228,14 +228,19 @@ export class InlineImageLayer implements IDisposable {
       const drawH = p.bitmap.height * scale;
       const x = p.col * cell.width + (boxW - drawW) / 2;
       const y = row * cell.height + (boxH - drawH) / 2;
-      // Text always wins: a row band that holds glyphs inside the picture's columns is
-      // left to the terminal, so scrolling or a repaint can never hide content.
+      // Text always wins, and a picture that would collide with any glyph is dropped
+      // whole: TUI frames keep writing into the rows a picture reserves, so a partial
+      // paint would leave slivers behind instead of a readable image.
       const first = Math.max(row, 0);
       const last = Math.min(row + p.rows, this.term.rows);
       const colStart = Math.max(0, Math.floor(x / cell.width));
       const colEnd = Math.min(this.term.cols, Math.ceil((x + drawW) / cell.width));
+      let clear = first < last;
+      for (let band = first; clear && band < last; band++) {
+        clear = this.bandBlank(buffer, p.line + (band - row), colStart, colEnd - colStart);
+      }
+      if (!clear) continue;
       for (let band = first; band < last; band++) {
-        if (!this.bandBlank(buffer, p.line + (band - row), colStart, colEnd - colStart)) continue;
         const topY = band * cell.height;
         const interTop = Math.max(topY, y);
         const interBottom = Math.min(topY + cell.height, y + drawH);

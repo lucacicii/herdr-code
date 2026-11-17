@@ -1,7 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { wsUrl } from '../lib/api';
 import { createFileLinkProvider } from '../lib/terminalLinks';
@@ -21,7 +20,7 @@ interface XTermPaneProps {
   lineHeight: number;
   focused: boolean;
   onFocus: () => void;
-  onOpenFileLine: (path: string, line: number) => void;
+  onOpenFileLine: (path: string, line?: number) => void;
   onPastePath: (path: string) => void;
 }
 
@@ -189,10 +188,8 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     });
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
-    const linksAddon = new WebLinksAddon();
 
     term.loadAddon(fitAddon);
-    term.loadAddon(linksAddon);
     term.open(container);
 
     // Inline images (iTerm2 OSC 1337) are painted into a buffer-line overlay, not
@@ -201,8 +198,8 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     const imageLayer = new InlineImageLayer(term);
 
     const fileLinkDisp = term.registerLinkProvider(
-      createFileLinkProvider(term, (path, line) => {
-        onOpenFileLineRef.current(path, line);
+      createFileLinkProvider(term, (target) => {
+        onOpenFileLineRef.current(target.path, target.line);
       })
     );
 
