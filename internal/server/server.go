@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	appfs "github.com/lucacicii/herdr-code/internal/fs"
 	appgit "github.com/lucacicii/herdr-code/internal/git"
+	"github.com/lucacicii/herdr-code/internal/happ"
 	"github.com/lucacicii/herdr-code/internal/hc"
 	"github.com/lucacicii/herdr-code/internal/workspace"
 )
@@ -33,12 +34,15 @@ type Config struct {
 	AllowedOrigins []string
 	// WorkspaceConfigPath overrides where workspace pins persist (default: ~/.config/herdr-code/workspaces.json).
 	WorkspaceConfigPath string
+	// HerdrAppPath overrides the Herdr app CLI used to put terminals into app spaces.
+	HerdrAppPath string
 }
 
 type Server struct {
 	cfg        Config
 	hc         *hc.Client
 	workspaces *workspace.Manager
+	herdrApp   *happ.Client
 	hub        *EventHub
 	watcher    *appfs.Watcher
 	upgrader   websocket.Upgrader
@@ -62,6 +66,7 @@ func New(cfg Config) *Server {
 		cfg:        cfg,
 		hc:         hcClient,
 		workspaces: wsMgr,
+		herdrApp:   happ.New(cfg.HerdrAppPath),
 		hub:        hub,
 		watcher:    watcher,
 		mux:        http.NewServeMux(),
@@ -163,6 +168,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/workspaces", s.authJSON(s.handleAddWorkspace))
 	s.mux.HandleFunc("POST /api/workspaces/{id}/pin", s.authJSON(s.handlePinWorkspace))
 	s.mux.HandleFunc("POST /api/workspaces/{id}/watch", s.authJSON(s.handleWatchWorkspace))
+	s.mux.HandleFunc("POST /api/workspaces/{id}/adopt", s.authJSON(s.handleAdoptWorkspace))
 
 	// Local directory picker helper
 	s.mux.HandleFunc("GET /api/fs/browse", s.authJSON(s.handleBrowseLocalDirs))
@@ -323,6 +329,52 @@ func (s *Server) handleWatchWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "watching": ws.Path})
+}
+
+func (s *Server) handleAdoptWorkspace(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	list, err := s.workspaces.List(r.Context(), workspace.ListOptions{})
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var target *workspace.Workspace
+	for i := range list {
+		if list[i].ID == id {
+			target = &list[i]
+			break
+		}
+	}
+	if target == nil {
+		writeJSONError(w, http.StatusNotFound, errors.New("workspace not found"))
+		return
+	}
+	var terminals []string
+	for _, terminal := range target.Terminals {
+		if terminal.State == "live" {
+			terminals = append(terminals, terminal.Address)
+		}
+	}
+	if len(terminals) == 0 {
+		writeJSONError(w, http.StatusBadRequest, errors.New("no live terminals to show in Herdr"))
+		return
+	}
+	if !s.herdrApp.Available() {
+		writeJSONError(w, http.StatusNotImplemented, happ.ErrUnavailable)
+		return
+	}
+	result, err := s.herdrApp.Adopt(r.Context(), target.Name, target.Path, terminals)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err)
+		return
+	}
+	s.hub.Broadcast(map[string]any{
+		"type":         "herdr.space.adopted",
+		"workspace_id": target.ID,
+		"space_id":     result.SpaceID,
+		"timestamp":    time.Now().UnixMilli(),
+	})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleBrowseLocalDirs(w http.ResponseWriter, r *http.Request) {

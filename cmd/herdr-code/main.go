@@ -42,6 +42,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:4242", "HTTP listen address")
 	socket := flag.String("socket", hc.DefaultSocketPath(), "Path to herdr-core (hc) Unix socket")
 	token := flag.String("token", os.Getenv("HERDR_CODE_TOKEN"), "Optional bearer token for API/WebSocket auth")
+	herdrApp := flag.String("herdr-app", os.Getenv("HERDR_APP_BIN"), "Path to the Herdr app CLI (default: herdr-app on PATH, else the macOS bundle)")
 	allowedOrigin := flag.String("allowed-origin", os.Getenv("HERDR_CODE_ALLOWED_ORIGIN"), "Comma-separated extra allowed Origins or hostnames")
 	openBrowser := flag.Bool("open", false, "Open the workbench URL in the default browser")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -71,6 +72,7 @@ func main() {
 		SocketPath:     *socket,
 		Token:          *token,
 		AllowedOrigins: allowedOrigins,
+		HerdrAppPath:   *herdrApp,
 		StaticFS:       herdrweb.StaticFS(),
 		Version:        version,
 	})

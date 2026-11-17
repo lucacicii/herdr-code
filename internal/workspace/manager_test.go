@@ -43,7 +43,7 @@ func TestResolveSafePathAndPersist(t *testing.T) {
 	}
 
 	mgr2 := NewManager(nil, cfg)
-	list, err := mgr2.List(context.Background())
+	list, err := mgr2.List(context.Background(), ListOptions{})
 	if err != nil || len(list) != 1 {
 		t.Fatalf("expected 1 persisted workspace, got %d (err=%v)", len(list), err)
 	}
@@ -64,7 +64,7 @@ func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
 			"where":         "herdr-code / 1",
 		},
 	}
-	ws := mgr.spaceWorkspace(context.Background(), wsMap, labelled, nil)
+	ws := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, labelled, nil)
 	if ws == nil {
 		t.Fatalf("expected a space row for a labelled terminal")
 	}
@@ -81,7 +81,7 @@ func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
 
 	// Doc names win, and every terminal of the space lands in the same row.
 	second := hc.Terminal{Address: "t2", Cwd: dir, Labels: map[string]string{HerdrSpaceLabel: "sp123"}}
-	if got := mgr.spaceWorkspace(context.Background(), wsMap, second, map[string]string{"sp123": "TMS"}); got != ws {
+	if got := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, second, map[string]string{"sp123": "TMS"}); got != ws {
 		t.Fatalf("expected the same row for the same space, got %+v", got)
 	}
 	if ws.Name != "herdr-code" {
@@ -89,8 +89,42 @@ func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
 	}
 
 	// Terminals no space claims keep using directory grouping.
-	if got := mgr.spaceWorkspace(context.Background(), wsMap, hc.Terminal{Address: "t3", Cwd: dir}, nil); got != nil {
+	if got := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, hc.Terminal{Address: "t3", Cwd: dir}, nil); got != nil {
 		t.Fatalf("expected no space row without herdr.space label, got %+v", got)
+	}
+}
+
+func TestHerdrSpaceRowMergesWithPinnedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	canon, err := canonicalDir(dir)
+	if err != nil {
+		t.Fatalf("canonicalDir: %v", err)
+	}
+	mgr := NewManager(nil, filepath.Join(t.TempDir(), "workspaces.json"))
+	pinned := &Workspace{ID: "pinned1", Name: "tms", Path: canon}
+	wsMap := map[string]*Workspace{canon: pinned}
+	byPath := map[string]*Workspace{canon: pinned}
+
+	got := mgr.spaceWorkspace(context.Background(), wsMap, byPath, hc.Terminal{
+		Address: "t1",
+		Cwd:     canon,
+		Labels:  map[string]string{HerdrSpaceLabel: "sp9", "where": "tms / Pi"},
+	}, nil)
+	if got != pinned || pinned.SpaceID != "sp9" {
+		t.Fatalf("expected the pinned row to carry the space, got %+v", got)
+	}
+	if len(wsMap) != 1 {
+		t.Fatalf("expected one row for the directory, got %d", len(wsMap))
+	}
+
+	// A second space in the same directory keeps its own row instead of stealing the first.
+	other := mgr.spaceWorkspace(context.Background(), wsMap, byPath, hc.Terminal{
+		Address: "t2",
+		Cwd:     canon,
+		Labels:  map[string]string{HerdrSpaceLabel: "sp10", "where": "other / 1"},
+	}, nil)
+	if other == pinned || other.SpaceID != "sp10" {
+		t.Fatalf("expected a separate row for a second space, got %+v", other)
 	}
 }
 

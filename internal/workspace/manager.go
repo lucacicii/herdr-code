@@ -397,7 +397,7 @@ func (m *Manager) terminalPath(ctx context.Context, t hc.Terminal) string {
 // spaceWorkspace returns the Herdr.app space that owns t, creating its row on first
 // sight. A space row carries the space's name and anchors to its first terminal's
 // directory, so file and git panes keep working while grouping follows Herdr.app.
-func (m *Manager) spaceWorkspace(ctx context.Context, wsMap map[string]*Workspace, t hc.Terminal, names map[string]string) *Workspace {
+func (m *Manager) spaceWorkspace(ctx context.Context, wsMap, byPath map[string]*Workspace, t hc.Terminal, names map[string]string) *Workspace {
 	spaceID := t.Labels[HerdrSpaceLabel]
 	if spaceID == "" {
 		return nil
@@ -407,6 +407,14 @@ func (m *Manager) spaceWorkspace(ctx context.Context, wsMap map[string]*Workspac
 		return ws
 	}
 	path := m.terminalPath(ctx, t)
+	// One row per directory: a pinned or auto row in the same place carries the space
+	// instead of a second row with the same name.
+	if path != "" {
+		if ws, ok := byPath[path]; ok && (ws.SpaceID == "" || ws.SpaceID == spaceID) {
+			ws.SpaceID = spaceID
+			return ws
+		}
+	}
 	name := names[spaceID]
 	if name == "" {
 		if where := t.Labels["where"]; where != "" {
@@ -429,6 +437,9 @@ func (m *Manager) spaceWorkspace(ctx context.Context, wsMap map[string]*Workspac
 	}
 	wsMap[rowID] = ws
 	if path != "" {
+		if _, taken := byPath[path]; !taken {
+			byPath[path] = ws
+		}
 		m.mu.Lock()
 		m.byID[rowID] = path
 		m.mu.Unlock()
@@ -467,6 +478,9 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 	spaceNames := m.herdrSpaceNames(ctx)
 
 	wsMap := make(map[string]*Workspace)
+	// byPath finds the row for a directory, whichever branch made it, so a space and a
+	// pin for the same place stay one row.
+	byPath := make(map[string]*Workspace)
 
 	m.mu.RLock()
 	savedCopy := make([]savedWorkspace, 0, len(m.saved))
@@ -476,7 +490,7 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 	m.mu.RUnlock()
 
 	for _, sw := range savedCopy {
-		wsMap[sw.Path] = &Workspace{
+		ws := &Workspace{
 			ID:        sw.ID,
 			Name:      sw.Name,
 			Path:      sw.Path,
@@ -486,10 +500,12 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 			Terminals: []hc.Terminal{},
 			UpdatedMs: sw.AddedMs,
 		}
+		wsMap[sw.Path] = ws
+		byPath[sw.Path] = ws
 	}
 
 	for _, t := range terminals {
-		ws := m.spaceWorkspace(ctx, wsMap, t, spaceNames)
+		ws := m.spaceWorkspace(ctx, wsMap, byPath, t, spaceNames)
 		if ws == nil {
 			ws = pinnedWorkspace(wsMap, t)
 		}
@@ -507,7 +523,7 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 			if !isRepo {
 				root = canon
 			}
-			ws = wsMap[root]
+			ws = byPath[root]
 			if ws == nil {
 				id := workspaceIDForPath(root)
 				ws = &Workspace{
@@ -521,6 +537,7 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 					UpdatedMs: int64(t.CreatedMs),
 				}
 				wsMap[root] = ws
+				byPath[root] = ws
 				m.mu.Lock()
 				m.byID[id] = root
 				m.mu.Unlock()

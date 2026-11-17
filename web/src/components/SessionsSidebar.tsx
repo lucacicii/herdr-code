@@ -8,6 +8,7 @@ import {
   Layers,
   ListOrdered,
   Loader2,
+  PanelsTopLeft,
   Pin,
   RefreshCw,
   Terminal as TerminalIcon,
@@ -497,6 +498,17 @@ export function SessionsSidebar({
       await api.pinWorkspace(ws.id, false);
     } catch {
       // ignore
+    }
+    onTerminalsMutated();
+  };
+
+  const adoptSpace = async (ws: Workspace) => {
+    setCtxMenu(null);
+    try {
+      await api.adoptWorkspace(ws.id);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not show this space in Herdr');
+      return;
     }
     onTerminalsMutated();
   };
@@ -1077,6 +1089,12 @@ export function SessionsSidebar({
           {ctxMenu.kind === 'space' ? (
             <>
               <div className="ctx-menu-label">{ctxMenu.ws.name}</div>
+              {ctxMenu.ws.terminals.some((t) => t.state === 'live') && (
+                <button className="ctx-menu-item" onClick={() => void adoptSpace(ctxMenu.ws)}>
+                  <PanelsTopLeft size={12} />
+                  {ctxMenu.ws.space_id ? 'Add to Herdr Space' : 'Show in Herdr.app'}
+                </button>
+              )}
               <button className="ctx-menu-item danger" onClick={() => void closeSpace(ctxMenu.ws)}>
                 <X size={12} />
                 Close Space

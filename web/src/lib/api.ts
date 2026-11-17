@@ -96,6 +96,12 @@ export const api = {
       method: 'POST',
     }),
 
+  adoptWorkspace: (id: string) =>
+    req<{ space_id: string; adopted: string[]; created: boolean }>(
+      `/api/workspaces/${encodeURIComponent(id)}/adopt`,
+      { method: 'POST' }
+    ),
+
   browseLocalDirs: (dir = '~') =>
     req<{ current: string; parent: string; dirs: { name: string; path: string }[] }>(
       `/api/fs/browse?dir=${encodeURIComponent(dir)}`
