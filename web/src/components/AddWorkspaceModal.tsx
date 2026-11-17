@@ -180,10 +180,6 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
                   style={{ paddingLeft: 8 }}
                   onClick={() => {
                     cancelAutoNav();
-                    setPathInput(d.path);
-                  }}
-                  onDoubleClick={() => {
-                    cancelAutoNav();
                     void browse(d.path);
                   }}
                 >
