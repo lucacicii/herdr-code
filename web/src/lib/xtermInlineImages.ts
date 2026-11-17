@@ -1,4 +1,4 @@
-import type { IDisposable, Terminal } from '@xterm/xterm';
+import type { IBuffer, IDisposable, Terminal } from '@xterm/xterm';
 
 /**
  * Inline image support for panes that host a full-screen TUI.
@@ -245,6 +245,7 @@ export class InlineImageLayer implements IDisposable {
         ctx.drawImage(p.bitmap, 0, sy, p.bitmap.width, (interH / drawH) * p.bitmap.height, x, interTop, drawW, interH);
       }
     }
+    return true;
   }
 
   /** True when the buffer line holds no glyphs under the picture's column span. */
