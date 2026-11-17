@@ -20,12 +20,12 @@ import (
 )
 
 type StatusCounts struct {
-	Working  int `json:"working"`
-	Blocked  int `json:"blocked"`
-	Idle     int `json:"idle"`
-	Done     int `json:"done"`
-	Error    int `json:"error"`
-	Total    int `json:"total"`
+	Working int `json:"working"`
+	Blocked int `json:"blocked"`
+	Idle    int `json:"idle"`
+	Done    int `json:"done"`
+	Error   int `json:"error"`
+	Total   int `json:"total"`
 }
 
 type Workspace struct {
@@ -47,11 +47,11 @@ type Workspace struct {
 }
 
 type savedWorkspace struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Path       string `json:"path"`
-	Pinned     bool   `json:"pinned"`
-	AddedMs    int64  `json:"added_ms"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Pinned  bool   `json:"pinned"`
+	AddedMs int64  `json:"added_ms"`
 }
 
 type Manager struct {
@@ -59,10 +59,11 @@ type Manager struct {
 	configPath string
 	spaces     SpaceLister
 
-	mu          sync.RWMutex
-	saved       map[string]savedWorkspace // keyed by canonical path
-	byID        map[string]string         // id -> canonical path
-	gitRootCache map[string]string        // cwd -> gitRoot ("" if not repo)
+	mu           sync.RWMutex
+	saved        map[string]savedWorkspace // keyed by canonical path
+	byID         map[string]string         // id -> canonical path
+	spaceByRow   map[string]string         // row id -> Herdr app space id
+	gitRootCache map[string]string         // cwd -> gitRoot ("" if not repo)
 }
 
 // SpaceLister is the Herdr app's own space list: the same spaces, names, order and
@@ -95,6 +96,7 @@ func NewManager(hcClient *hc.Client, configPath string) *Manager {
 		configPath:   configPath,
 		saved:        make(map[string]savedWorkspace),
 		byID:         make(map[string]string),
+		spaceByRow:   make(map[string]string),
 		gitRootCache: make(map[string]string),
 	}
 	m.load()
@@ -658,6 +660,18 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 		result = append(result, *ws)
 	}
 
+	// Remember which app space each row stands for, so a workspace id alone can say
+	// whether a new terminal belongs in an app space.
+	m.mu.Lock()
+	for i := range result {
+		if result[i].SpaceID != "" {
+			m.spaceByRow[result[i].ID] = result[i].SpaceID
+		} else {
+			delete(m.spaceByRow, result[i].ID)
+		}
+	}
+	m.mu.Unlock()
+
 	sort.Slice(result, func(i, j int) bool {
 		oi, iok := spaceOrder[result[i].ID]
 		oj, jok := spaceOrder[result[j].ID]
@@ -682,12 +696,14 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 func (m *Manager) ResolveWorkspace(ctx context.Context, id string) (*Workspace, error) {
 	m.mu.RLock()
 	path, ok := m.byID[id]
+	spaceID := m.spaceByRow[id]
 	m.mu.RUnlock()
 	if ok {
 		return &Workspace{
 			ID:        id,
 			Name:      filepath.Base(path),
 			Path:      path,
+			SpaceID:   spaceID,
 			IsGitRepo: m.resolveGitRoot(ctx, path) != "",
 		}, nil
 	}

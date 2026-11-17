@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -672,9 +673,11 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	cwd := body.Cwd
 	workspacePath := ""
+	spaceID := ""
 	if body.WorkspaceID != "" {
 		if ws, err := s.workspaces.ResolveWorkspace(r.Context(), body.WorkspaceID); err == nil {
 			workspacePath = ws.Path
+			spaceID = ws.SpaceID
 			if cwd == "" {
 				cwd = ws.Path
 			}
@@ -727,7 +730,26 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadGateway, err)
 		return
 	}
+	// A terminal created in a workspace that is an app space belongs in that space,
+	// so both clients show the same terminals. Off the request path: the app needs a
+	// round trip and the terminal is already usable.
+	if spaceID != "" && res.Terminal.Address != "" {
+		go s.keepInSpace(spaceID, res.Terminal.Address)
+	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// keepInSpace shows a terminal in an existing Herdr app space. The app writes the
+// labels, so herdr-core emits a labels event and every client refreshes from it.
+func (s *Server) keepInSpace(spaceID, address string) {
+	if !s.herdrApp.Available() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := s.herdrApp.Keep(ctx, spaceID, []string{address}); err != nil {
+		log.Printf("show %s in Herdr space %s: %v", address, spaceID, err)
+	}
 }
 
 func (s *Server) handleSendTerminal(w http.ResponseWriter, r *http.Request) {

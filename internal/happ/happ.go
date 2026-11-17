@@ -234,8 +234,8 @@ func (c *Client) Adopt(ctx context.Context, name, folder string, terminals []str
 		return result, err
 	}
 	for _, terminal := range pending {
-		if _, err := c.Do(ctx, "terminal.keep", map[string]string{"terminal": terminal, "place": "tab"}); err != nil {
-			return result, fmt.Errorf("show %s: %w", terminal, err)
+		if err := c.keepOne(ctx, terminal); err != nil {
+			return result, err
 		}
 		result.Adopted = append(result.Adopted, terminal)
 	}
@@ -251,6 +251,62 @@ func (c *Client) Adopt(ctx context.Context, name, folder string, terminals []str
 		}
 	}
 	return result, nil
+}
+
+// Keep gives terminals a pane in an existing space. The app only keeps terminals in
+// the space it shows, so this selects the space and puts the previous one back.
+func (c *Client) Keep(ctx context.Context, spaceID string, terminals []string) error {
+	if spaceID == "" || len(terminals) == 0 {
+		return nil
+	}
+	previous := ""
+	if list, err := c.List(ctx); err == nil {
+		for _, space := range list.Spaces {
+			if space.Active && space.ID != spaceID {
+				previous = space.ID
+			}
+		}
+	}
+	if _, err := c.Do(ctx, "space.select", map[string]string{"id": spaceID}); err != nil {
+		return err
+	}
+	kept := make([]string, 0, len(terminals))
+	for _, terminal := range terminals {
+		if err := c.keepOne(ctx, terminal); err != nil {
+			return err
+		}
+		kept = append(kept, terminal)
+	}
+	if _, err := c.waitForTerminals(ctx, spaceID, kept); err != nil {
+		return err
+	}
+	if previous != "" {
+		if _, err := c.Do(ctx, "space.select", map[string]string{"id": previous}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// keepOne gives one terminal a pane in the shown space. The app only keeps
+// terminals it has already seen from herdr-core, so a terminal created a moment ago
+// is rejected ("no running terminal") until its next snapshot — retry for a while.
+func (c *Client) keepOne(ctx context.Context, terminal string) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, err := c.Do(ctx, "terminal.keep", map[string]string{"terminal": terminal, "place": "tab"})
+		if err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("show %s: %w", terminal, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("show %s: %w", terminal, ctx.Err())
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // waitForTerminals polls until the space lists every terminal, so callers never act
