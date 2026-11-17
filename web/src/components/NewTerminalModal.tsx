@@ -95,6 +95,13 @@ export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalM
             >
               pi
             </button>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => void launch({ line: 'omp', name: name.trim() || undefined })}
+            >
+              omp
+            </button>
             {templates.map((tpl) => (
               <button
                 key={tpl.name}
