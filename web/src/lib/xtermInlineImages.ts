@@ -249,7 +249,7 @@ export class InlineImageLayer implements IDisposable {
 
   /** True when the buffer line holds no glyphs under the picture's column span. */
   private bandBlank(buffer: IBuffer, line: number, col: number, cols: number): boolean {
-    const target = buffer.getLine(line - buffer.baseY);
+    const target = buffer.getLine(line);
     if (!target) return false;
     const cell = buffer.getNullCell();
     const end = Math.min(col + cols, this.term.cols);
