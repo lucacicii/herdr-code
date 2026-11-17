@@ -87,6 +87,30 @@ export interface HerdrSpacesResponse {
   colors: Record<string, string>;
 }
 
+/** One agent conversation run in a space, as the history drawer lists it. */
+export interface SessionInfo {
+  address: string;
+  agent: string;
+  session_id: string;
+  id_known: boolean;
+  title: string;
+  where: string;
+  cwd: string;
+  state: 'live' | 'finished';
+  started_ms: number;
+  finished_ms?: number;
+  reason?: string;
+  exit_code?: number | null;
+  resume_argv: string[];
+  resume_note?: string;
+}
+
+export interface TerminalOutput {
+  text: string;
+  complete: boolean;
+  how: string;
+}
+
 export interface DepCLIStatus {
   installed: boolean;
   path?: string;

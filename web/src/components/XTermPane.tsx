@@ -26,7 +26,7 @@ interface XTermPaneProps {
   onPastePath: (path: string) => void;
 }
 
-const LIGHT_XTERM_THEME = {
+export const LIGHT_XTERM_THEME = {
   background: '#ffffff',
   foreground: '#171717',
   cursor: '#0070f3',
@@ -50,7 +50,7 @@ const LIGHT_XTERM_THEME = {
   brightWhite: '#ffffff',
 };
 
-const DARK_XTERM_THEME = {
+export const DARK_XTERM_THEME = {
   background: '#0a0a0a',
   foreground: '#ededed',
   cursor: '#3291ff',

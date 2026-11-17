@@ -29,6 +29,7 @@ interface SessionsSidebarProps {
   onFocusSession: (terminalAddress: string, workspaceId: string | null) => void;
   onOpenAddWorkspace: () => void;
   onTerminalsMutated: () => void;
+  onOpenHistory: (wsId: string) => void;
   includeFinished: boolean;
   onToggleIncludeFinished: () => void;
 }
@@ -187,6 +188,7 @@ export function SessionsSidebar({
   onFocusSession,
   onOpenAddWorkspace,
   onTerminalsMutated,
+  onOpenHistory,
   includeFinished,
   onToggleIncludeFinished,
 }: SessionsSidebarProps) {
@@ -936,6 +938,17 @@ export function SessionsSidebar({
                       {ws.counts.total}
                     </span>
                   )}
+                  <button
+                    className="icon-btn"
+                    title="Past sessions in this space"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenHistory(ws.id);
+                    }}
+                    style={{ opacity: isActive ? 1 : 0.55 }}
+                  >
+                    <History size={12} />
+                  </button>
                 </div>
               </div>
             );

@@ -7,6 +7,7 @@ import { QuickOpenModal } from './components/QuickOpenModal';
 import { RightTerminalPane, type RightTerminalPaneHandle } from './components/RightTerminalPane';
 import { SettingsModal } from './components/SettingsModal';
 import { SessionsSidebar } from './components/SessionsSidebar';
+import { SpaceHistoryDrawer } from './components/SpaceHistoryDrawer';
 import { TopBar } from './components/TopBar';
 import { api, initTokenFromEnv, setAuthToken, wsUrl } from './lib/api';
 import { formatLineAnchor } from './lib/references';
@@ -85,6 +86,7 @@ export function App() {
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [showNewTerminal, setShowNewTerminal] = useState(false);
+  const [historyWorkspaceId, setHistoryWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPromptReason, setSettingsPromptReason] = useState<string | undefined>(undefined);
   const [codePaneOpen, setCodePaneOpen] = useState(false);
@@ -227,6 +229,9 @@ export function App() {
   }, [authNeeded]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || null;
+  const historyWorkspace = historyWorkspaceId
+    ? workspaces.find((w) => w.id === historyWorkspaceId) || null
+    : null;
   // A space row can carry closed terminals (history); panes only attach live ones.
   const activeWorkspaceLiveTerminals = useMemo(
     () => (activeWorkspace?.terminals || []).filter((t) => t.state === 'live'),
@@ -530,6 +535,7 @@ export function App() {
             }}
             onOpenAddWorkspace={() => setShowAddWorkspace(true)}
             onTerminalsMutated={() => void refreshData()}
+            onOpenHistory={(wsId) => setHistoryWorkspaceId(wsId)}
             includeFinished={includeFinished}
             onToggleIncludeFinished={() => setIncludeFinished((v) => !v)}
           />
@@ -651,6 +657,26 @@ export function App() {
                 setTerminalFocusReq({
                   address: term.address,
                   wsId: activeWorkspace?.id ?? null,
+                  seq: Date.now(),
+                });
+              }
+            });
+          }}
+        />
+      )}
+
+      {historyWorkspace && (
+        <SpaceHistoryDrawer
+          workspace={historyWorkspace}
+          theme={theme}
+          terminalFont={terminalFont}
+          onClose={() => setHistoryWorkspaceId(null)}
+          onResumed={(term) => {
+            void refreshData().then(() => {
+              if (term.address) {
+                setTerminalFocusReq({
+                  address: term.address,
+                  wsId: historyWorkspace.id,
                   seq: Date.now(),
                 });
               }

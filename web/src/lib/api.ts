@@ -5,8 +5,10 @@ import type {
   FileDiff,
   RepoStatus,
   SearchMatch,
+  SessionInfo,
   TemplateInfo,
   TerminalInfo,
+  TerminalOutput,
   TreeEntry,
   Workspace,
 } from '../types/api';
@@ -177,11 +179,20 @@ export const api = {
     line?: string;
     argv?: string[];
     name?: string;
+    keep?: boolean;
   }) =>
     req<{ terminal: TerminalInfo }>('/api/terminals', {
       method: 'POST',
       body: JSON.stringify(opts),
     }),
+
+  /** Every agent conversation run in a space, newest first. */
+  listSessions: (workspaceId: string) =>
+    req<SessionInfo[]>(`/api/sessions?workspace_id=${encodeURIComponent(workspaceId)}`),
+
+  /** What a terminal printed: live scrollback or the history kept after it ended. */
+  terminalOutput: (address: string, lines = 2000) =>
+    req<TerminalOutput>(`/api/terminals/${encodeURIComponent(address)}/output?lines=${lines}`),
 
   sendTerminal: (id: string, text: string, force = true) =>
     req<{ ok: boolean }>(`/api/terminals/${encodeURIComponent(id)}/send`, {

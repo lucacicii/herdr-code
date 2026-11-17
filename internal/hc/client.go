@@ -173,6 +173,18 @@ func (c *Client) RunTerminal(ctx context.Context, params RunParams) (*RunResult,
 	return &wrapped, nil
 }
 
+func (c *Client) ReadTerminal(ctx context.Context, terminal string, lines uint) (*ReadResult, error) {
+	params := map[string]any{"terminal": terminal}
+	if lines > 0 {
+		params["lines"] = lines
+	}
+	var res ReadResult
+	if err := c.Call(ctx, "terminal.read", params, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (c *Client) SendText(ctx context.Context, params SendParams) error {
 	return c.Call(ctx, "terminal.send", params, nil)
 }

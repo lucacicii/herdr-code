@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/lucacicii/herdr-code/internal/agentsessions"
 	appfs "github.com/lucacicii/herdr-code/internal/fs"
 	appgit "github.com/lucacicii/herdr-code/internal/git"
 	"github.com/lucacicii/herdr-code/internal/happ"
@@ -44,6 +45,7 @@ type Server struct {
 	hc         *hc.Client
 	workspaces *workspace.Manager
 	herdrApp   *happ.Client
+	sessions   *agentsessions.Index
 	hub        *EventHub
 	watcher    *appfs.Watcher
 	upgrader   websocket.Upgrader
@@ -72,6 +74,7 @@ func New(cfg Config) *Server {
 		hc:         hcClient,
 		workspaces: wsMgr,
 		herdrApp:   herdrApp,
+		sessions:   agentsessions.New(agentsessions.DefaultRoots()),
 		hub:        hub,
 		watcher:    watcher,
 		mux:        http.NewServeMux(),
@@ -198,8 +201,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/settings/dependencies/install", s.authJSON(s.handleInstallDependency))
 	s.mux.HandleFunc("GET /api/templates", s.authJSON(s.handleListTemplates))
 	s.mux.HandleFunc("GET /api/terminals", s.authJSON(s.handleListTerminals))
+	s.mux.HandleFunc("GET /api/sessions", s.authJSON(s.handleListSessions))
 	s.mux.HandleFunc("POST /api/terminals", s.authJSON(s.handleCreateTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/send", s.authJSON(s.handleSendTerminal))
+	s.mux.HandleFunc("GET /api/terminals/{id}/output", s.authJSON(s.handleTerminalOutput))
 	s.mux.HandleFunc("POST /api/terminals/{id}/keys", s.authJSON(s.handleKeysTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/label", s.authJSON(s.handleLabelTerminal))
 	s.mux.HandleFunc("POST /api/terminals/{id}/interrupt", s.authJSON(s.handleInterruptTerminal))
@@ -614,6 +619,59 @@ func (s *Server) handleListTerminals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+// Sessions of one space, newest first, with the command that resumes each.
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeJSONError(w, http.StatusBadRequest, errors.New("workspace_id is required"))
+		return
+	}
+	rows, err := s.workspaces.List(r.Context(), workspace.ListOptions{IncludeFinished: true})
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err)
+		return
+	}
+	var row *workspace.Workspace
+	for i := range rows {
+		if rows[i].ID == workspaceID {
+			row = &rows[i]
+			break
+		}
+	}
+	if row == nil {
+		writeJSONError(w, http.StatusNotFound, errors.New("unknown workspace"))
+		return
+	}
+
+	sessions := make([]agentsessions.Info, 0, len(row.Terminals))
+	for _, terminal := range row.Terminals {
+		sessions = append(sessions, agentsessions.Describe(terminal, s.sessions))
+	}
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].FinishedMs > sessions[j].FinishedMs
+	})
+	writeJSON(w, http.StatusOK, sessions)
+}
+
+// TerminalOutput replays what a terminal printed: live panes read from the core's
+// scrollback, finished ones from the history it kept.
+func (s *Server) handleTerminalOutput(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var lines uint = 2000
+	if raw := r.URL.Query().Get("lines"); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 32)
+		if err == nil && parsed > 0 {
+			lines = uint(parsed)
+		}
+	}
+	output, err := s.hc.ReadTerminal(r.Context(), id, lines)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, output)
 }
 
 // Terminal programs choose a graphics protocol from the environment they

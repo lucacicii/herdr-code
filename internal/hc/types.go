@@ -121,6 +121,13 @@ type RunResult struct {
 	Terminal Terminal `json:"terminal"`
 }
 
+// ReadResult is a terminal's screen plus scrollback, as the core keeps it.
+type ReadResult struct {
+	Text     string `json:"text"`
+	Complete bool   `json:"complete"`
+	How      string `json:"how"` // history, screen, exact
+}
+
 type SendParams struct {
 	Terminal string `json:"terminal"`
 	Text     string `json:"text"`
