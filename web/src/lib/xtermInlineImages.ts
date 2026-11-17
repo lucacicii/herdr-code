@@ -228,7 +228,37 @@ export class InlineImageLayer implements IDisposable {
       const drawH = p.bitmap.height * scale;
       const x = p.col * cell.width + (boxW - drawW) / 2;
       const y = row * cell.height + (boxH - drawH) / 2;
-      ctx.drawImage(p.bitmap, x, y, drawW, drawH);
+      // Text always wins: a row band that holds glyphs inside the picture's columns is
+      // left to the terminal, so scrolling or a repaint can never hide content.
+      const first = Math.max(row, 0);
+      const last = Math.min(row + p.rows, this.term.rows);
+      const colStart = Math.max(0, Math.floor(x / cell.width));
+      const colEnd = Math.min(this.term.cols, Math.ceil((x + drawW) / cell.width));
+      for (let band = first; band < last; band++) {
+        if (!this.bandBlank(buffer, p.line + (band - row), colStart, colEnd - colStart)) continue;
+        const topY = band * cell.height;
+        const interTop = Math.max(topY, y);
+        const interBottom = Math.min(topY + cell.height, y + drawH);
+        const interH = interBottom - interTop;
+        if (interH <= 0) continue;
+        const sy = ((interTop - y) / drawH) * p.bitmap.height;
+        ctx.drawImage(p.bitmap, 0, sy, p.bitmap.width, (interH / drawH) * p.bitmap.height, x, interTop, drawW, interH);
+      }
     }
+  }
+
+  /** True when the buffer line holds no glyphs under the picture's column span. */
+  private bandBlank(buffer: IBuffer, line: number, col: number, cols: number): boolean {
+    const target = buffer.getLine(line - buffer.baseY);
+    if (!target) return false;
+    const cell = buffer.getNullCell();
+    const end = Math.min(col + cols, this.term.cols);
+    for (let x = Math.max(0, col); x < end; x++) {
+      const current = target.getCell(x, cell);
+      if (!current) continue;
+      const chars = current.getChars();
+      if (chars.length > 0 && chars.trim().length > 0) return false;
+    }
+    return true;
   }
 }
