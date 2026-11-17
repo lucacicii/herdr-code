@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lucacicii/herdr-code/internal/happ"
 	"github.com/lucacicii/herdr-code/internal/hc"
 )
 
@@ -31,6 +32,7 @@ type Workspace struct {
 	ID           string        `json:"id"`
 	Name         string        `json:"name"`
 	Path         string        `json:"path"`
+	Machine      string        `json:"machine,omitempty"`
 	IsGitRepo    bool          `json:"is_git_repo"`
 	Branch       string        `json:"branch,omitempty"`
 	Ahead        int           `json:"ahead,omitempty"`
@@ -55,11 +57,31 @@ type savedWorkspace struct {
 type Manager struct {
 	hc         *hc.Client
 	configPath string
+	spaces     SpaceLister
 
 	mu          sync.RWMutex
 	saved       map[string]savedWorkspace // keyed by canonical path
 	byID        map[string]string         // id -> canonical path
 	gitRootCache map[string]string        // cwd -> gitRoot ("" if not repo)
+}
+
+// SpaceLister is the Herdr app's own space list: the same spaces, names, order and
+// machines its sidebar shows, including spaces no local terminal belongs to.
+type SpaceLister interface {
+	List(ctx context.Context) ([]happ.Space, error)
+}
+
+// SetSpaceLister makes rows follow the app's space list instead of terminal labels.
+func (m *Manager) SetSpaceLister(lister SpaceLister) {
+	m.mu.Lock()
+	m.spaces = lister
+	m.mu.Unlock()
+}
+
+func (m *Manager) spaceLister() SpaceLister {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.spaces
 }
 
 func NewManager(hcClient *hc.Client, configPath string) *Manager {
@@ -504,6 +526,61 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 		byPath[sw.Path] = ws
 	}
 
+	// The app is the authority on spaces: it knows names it derived, spaces on other
+	// machines, empty spaces, and their order. Local rows follow that list.
+	appSpaces, spaceOrder := m.appSpaceRows(ctx)
+	for _, sp := range appSpaces {
+		rowID := workspaceIDForPath("herdr-space:" + sp.ID)
+		if _, exists := wsMap[rowID]; exists {
+			continue
+		}
+		machine := ""
+		if sp.Machine != nil {
+			machine = *sp.Machine
+		}
+		path := ""
+		if machine == "" {
+			if canon, err := canonicalDir(sp.Folder); err == nil {
+				path = m.resolveGitRoot(ctx, canon)
+				if path == "" {
+					path = canon
+				}
+			}
+		}
+		if path != "" {
+			if ws, ok := byPath[path]; ok && (ws.SpaceID == "" || ws.SpaceID == sp.ID) {
+				ws.SpaceID = sp.ID
+				ws.Machine = machine
+				spaceOrder[ws.ID] = spaceOrder[rowID]
+				delete(spaceOrder, rowID)
+				continue
+			}
+		}
+		ws := &Workspace{
+			ID:        rowID,
+			SpaceID:   sp.ID,
+			Name:      sp.Name,
+			Path:      path,
+			Machine:   machine,
+			IsGitRepo: path != "" && m.resolveGitRoot(ctx, path) != "",
+			Pinned:    false,
+			Auto:      true,
+			Terminals: []hc.Terminal{},
+		}
+		if ws.Name == "" {
+			ws.Name = "space " + sp.ID
+		}
+		wsMap[rowID] = ws
+		if path != "" {
+			if _, taken := byPath[path]; !taken {
+				byPath[path] = ws
+			}
+			m.mu.Lock()
+			m.byID[rowID] = path
+			m.mu.Unlock()
+		}
+	}
+
 	for _, t := range terminals {
 		ws := m.spaceWorkspace(ctx, wsMap, byPath, t, spaceNames)
 		if ws == nil {
@@ -582,6 +659,14 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 	}
 
 	sort.Slice(result, func(i, j int) bool {
+		oi, iok := spaceOrder[result[i].ID]
+		oj, jok := spaceOrder[result[j].ID]
+		if iok != jok {
+			return iok
+		}
+		if iok && oi != oj {
+			return oi < oj
+		}
 		if result[i].Pinned != result[j].Pinned {
 			return result[i].Pinned
 		}
@@ -646,4 +731,24 @@ func ResolveSafePath(root string, rel string) (string, error) {
 		}
 	}
 	return joined, nil
+}
+
+// appSpaceRows reads the app's space list plus each space's position in it, so rows
+// can follow the same order the app's sidebar shows.
+func (m *Manager) appSpaceRows(ctx context.Context) ([]happ.Space, map[string]int) {
+	lister := m.spaceLister()
+	if lister == nil {
+		return nil, map[string]int{}
+	}
+	spaces, err := lister.List(ctx)
+	if err != nil {
+		return nil, map[string]int{}
+	}
+	order := make(map[string]int, len(spaces))
+	for i, sp := range spaces {
+		if sp.ID != "" {
+			order[workspaceIDForPath("herdr-space:"+sp.ID)] = i
+		}
+	}
+	return spaces, order
 }

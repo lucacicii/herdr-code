@@ -62,11 +62,15 @@ func New(cfg Config) *Server {
 		})
 	})
 
+	herdrApp := happ.New(cfg.HerdrAppPath)
+	// Rows follow the app's own space list when the app CLI is available.
+	wsMgr.SetSpaceLister(appSpaces{c: herdrApp})
+
 	s := &Server{
 		cfg:        cfg,
 		hc:         hcClient,
 		workspaces: wsMgr,
-		herdrApp:   happ.New(cfg.HerdrAppPath),
+		herdrApp:   herdrApp,
 		hub:        hub,
 		watcher:    watcher,
 		mux:        http.NewServeMux(),
@@ -329,6 +333,17 @@ func (s *Server) handleWatchWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "watching": ws.Path})
+}
+
+// appSpaces adapts the app CLI to workspace.SpaceLister.
+type appSpaces struct{ c *happ.Client }
+
+func (a appSpaces) List(ctx context.Context) ([]happ.Space, error) {
+	list, err := a.c.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return list.Spaces, nil
 }
 
 func (s *Server) handleAdoptWorkspace(w http.ResponseWriter, r *http.Request) {

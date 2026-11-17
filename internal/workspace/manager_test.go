@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/lucacicii/herdr-code/internal/happ"
 	"github.com/lucacicii/herdr-code/internal/hc"
 )
 
@@ -125,6 +126,44 @@ func TestHerdrSpaceRowMergesWithPinnedDirectory(t *testing.T) {
 	}, nil)
 	if other == pinned || other.SpaceID != "sp10" {
 		t.Fatalf("expected a separate row for a second space, got %+v", other)
+	}
+}
+
+type fakeSpaces []happ.Space
+
+func (f fakeSpaces) List(context.Context) ([]happ.Space, error) { return f, nil }
+
+func TestListFollowsAppSpaceList(t *testing.T) {
+	dir := t.TempDir()
+	canon, err := canonicalDir(dir)
+	if err != nil {
+		t.Fatalf("canonicalDir: %v", err)
+	}
+	remote := "myserver"
+	mgr := NewManager(nil, filepath.Join(t.TempDir(), "workspaces.json"))
+	mgr.SetSpaceLister(fakeSpaces{
+		{ID: "spA", Name: "alpha", Folder: dir},
+		{ID: "spB", Name: "beta"},
+		{ID: "spC", Name: "gamma", Folder: "/srv/app", Machine: &remote},
+	})
+
+	list, err := mgr.List(context.Background(), ListOptions{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("expected every app space, got %d", len(list))
+	}
+	if list[0].Name != "alpha" || list[0].Path != canon || list[0].SpaceID != "spA" {
+		t.Fatalf("unexpected first row: %+v", list[0])
+	}
+	// A space with no terminals and no folder still gets a row, as in the app.
+	if list[1].Name != "beta" || list[1].Path != "" || list[1].SpaceID != "spB" {
+		t.Fatalf("unexpected empty-space row: %+v", list[1])
+	}
+	// Remote spaces are listed but cannot be opened from this machine.
+	if list[2].Machine != remote || list[2].Path != "" || list[2].IsGitRepo {
+		t.Fatalf("unexpected remote-space row: %+v", list[2])
 	}
 }
 
