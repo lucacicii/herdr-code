@@ -49,6 +49,51 @@ func TestResolveSafePathAndPersist(t *testing.T) {
 	}
 }
 
+func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(nil, filepath.Join(t.TempDir(), "workspaces.json"))
+	wsMap := map[string]*Workspace{}
+
+	labelled := hc.Terminal{
+		Address:   "t1",
+		Cwd:       dir,
+		CreatedMs: 10,
+		Labels: map[string]string{
+			HerdrSpaceLabel: "sp123",
+			HerdrTabLabel:   "tb1",
+			"where":         "herdr-code / 1",
+		},
+	}
+	ws := mgr.spaceWorkspace(context.Background(), wsMap, labelled, nil)
+	if ws == nil {
+		t.Fatalf("expected a space row for a labelled terminal")
+	}
+	if ws.SpaceID != "sp123" || ws.ID != workspaceIDForPath("herdr-space:sp123") {
+		t.Fatalf("unexpected space row identity: id=%s space=%s", ws.ID, ws.SpaceID)
+	}
+	// No doc name available: fall back to the cached "name / tab" label, not the id.
+	if ws.Name != "herdr-code" {
+		t.Fatalf("expected name from where label, got %q", ws.Name)
+	}
+	if ws.Path == "" {
+		t.Fatalf("expected space row to anchor to a directory, got empty path")
+	}
+
+	// Doc names win, and every terminal of the space lands in the same row.
+	second := hc.Terminal{Address: "t2", Cwd: dir, Labels: map[string]string{HerdrSpaceLabel: "sp123"}}
+	if got := mgr.spaceWorkspace(context.Background(), wsMap, second, map[string]string{"sp123": "TMS"}); got != ws {
+		t.Fatalf("expected the same row for the same space, got %+v", got)
+	}
+	if ws.Name != "herdr-code" {
+		t.Fatalf("existing row name should not be rewritten by a later doc name, got %q", ws.Name)
+	}
+
+	// Terminals no space claims keep using directory grouping.
+	if got := mgr.spaceWorkspace(context.Background(), wsMap, hc.Terminal{Address: "t3", Cwd: dir}, nil); got != nil {
+		t.Fatalf("expected no space row without herdr.space label, got %+v", got)
+	}
+}
+
 func TestPinnedWorkspaceKeepsTerminalInCreationWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(nil, filepath.Join(t.TempDir(), "workspaces.json"))

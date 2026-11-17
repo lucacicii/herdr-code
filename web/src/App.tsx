@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AddWorkspaceModal } from './components/AddWorkspaceModal';
 import { CenterCodePane } from './components/CenterCodePane';
 import { FileDock } from './components/FileDock';
@@ -58,6 +58,10 @@ export function App() {
   const [herdrSpaces, setHerdrSpaces] = useState<HerdrSpace[]>([]);
   const [herdrColors, setHerdrColors] = useState<Record<string, string>>({});
   const [focusedTerminalAddress, setFocusedTerminalAddress] = useState<string | null>(null);
+  // Herdr.app keeps closed terminals in its spaces; matching that view is opt-in here.
+  const [includeFinished, setIncludeFinished] = useState(
+    () => localStorage.getItem('herdr_code_include_finished') === '1'
+  );
   const [terminalFocusReq, setTerminalFocusReq] = useState<{
     address: string;
     wsId: string | null;
@@ -130,7 +134,7 @@ export function App() {
       setHcConnected(h.hc_connected);
 
       const [wsRes, termRes, herdrRes] = await Promise.all([
-        api.listWorkspaces(),
+        api.listWorkspaces(includeFinished),
         api.listTerminals().catch(() => ({ terminals: [] as TerminalInfo[] })),
         api.herdrSpaces().catch(() => ({ spaces: [] as HerdrSpace[], colors: {} as Record<string, string> })),
       ]);
@@ -164,7 +168,11 @@ export function App() {
         setAuthNeeded(true);
       }
     }
-  }, []);
+  }, [includeFinished]);
+
+  useEffect(() => {
+    localStorage.setItem('herdr_code_include_finished', includeFinished ? '1' : '0');
+  }, [includeFinished]);
 
   useEffect(() => {
     void refreshData();
@@ -219,6 +227,11 @@ export function App() {
   }, [authNeeded]);
 
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || null;
+  // A space row can carry closed terminals (history); panes only attach live ones.
+  const activeWorkspaceLiveTerminals = useMemo(
+    () => (activeWorkspace?.terminals || []).filter((t) => t.state === 'live'),
+    [activeWorkspace]
+  );
 
   useEffect(() => {
     if (activeWorkspaceId) {
@@ -517,6 +530,8 @@ export function App() {
             }}
             onOpenAddWorkspace={() => setShowAddWorkspace(true)}
             onTerminalsMutated={() => void refreshData()}
+            includeFinished={includeFinished}
+            onToggleIncludeFinished={() => setIncludeFinished((v) => !v)}
           />
         </aside>
 
@@ -530,7 +545,7 @@ export function App() {
         <section className="wb-col" style={{ flex: 1, minWidth: 320 }}>
           <RightTerminalPane
             ref={terminalPaneRef}
-            workspaceTerminals={activeWorkspace?.terminals || []}
+            workspaceTerminals={activeWorkspaceLiveTerminals}
             allTerminals={allTerminals}
             activeWorkspaceId={activeWorkspace?.id ?? null}
             activeWorkspacePath={activeWorkspace?.path}

@@ -38,6 +38,7 @@ type Workspace struct {
 	MainRepoPath string        `json:"main_repo_path,omitempty"`
 	Pinned       bool          `json:"pinned"`
 	Auto         bool          `json:"auto"`
+	SpaceID      string        `json:"space_id,omitempty"`
 	Terminals    []hc.Terminal `json:"terminals"`
 	Counts       StatusCounts  `json:"counts"`
 	UpdatedMs    int64         `json:"updated_ms"`
@@ -262,7 +263,7 @@ func (m *Manager) Add(ctx context.Context, rawPath string, pin bool) (*Workspace
 	_ = m.saveLocked()
 	m.mu.Unlock()
 
-	list, err := m.List(ctx)
+	list, err := m.List(ctx, ListOptions{})
 	if err == nil {
 		for i := range list {
 			if list[i].ID == id {
@@ -328,6 +329,113 @@ func pinnedWorkspace(wsMap map[string]*Workspace, t hc.Terminal) *Workspace {
 	return wsMap[canon]
 }
 
+// HerdrSpaceLabel marks a terminal as belonging to a Herdr.app space. Herdr.app writes
+// the label onto the terminal inside herdr-core (alongside herdr.tab), so both clients
+// can group the same terminals the same way; directory pins only decide rows for
+// terminals that no space claims.
+const HerdrSpaceLabel = "herdr.space"
+
+// HerdrTabLabel is the tab inside HerdrSpaceLabel's space; kept for the row subtitle.
+const HerdrTabLabel = "herdr.tab"
+
+// ListOptions tunes what List reports.
+type ListOptions struct {
+	// IncludeFinished also groups finished terminals, which is how Herdr.app's own
+	// history (and any space holding only closed terminals) shows up here.
+	IncludeFinished bool
+}
+
+// herdrSpaceNames reads the space names Herdr.app publishes into herdr-core's doc.
+func (m *Manager) herdrSpaceNames(ctx context.Context) map[string]string {
+	names := map[string]string{}
+	if m.hc == nil {
+		return names
+	}
+	raw, err := m.hc.DocGet(ctx, "herdr-app")
+	if err != nil || len(raw) == 0 {
+		return names
+	}
+	var doc struct {
+		Spaces []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"spaces"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return names
+	}
+	for _, sp := range doc.Spaces {
+		if sp.ID != "" && sp.Name != "" {
+			names[sp.ID] = sp.Name
+		}
+	}
+	return names
+}
+
+// terminalPath is the directory a terminal anchors to: its labelled workspace when set,
+// else the git root of its cwd, else the cwd itself.
+func (m *Manager) terminalPath(ctx context.Context, t hc.Terminal) string {
+	if p := t.Labels[WorkspaceLabel]; p != "" {
+		if canon, err := canonicalDir(p); err == nil {
+			return canon
+		}
+	}
+	cwd := t.Cwd
+	if t.Foreground != nil && t.Foreground.Cwd != "" {
+		cwd = t.Foreground.Cwd
+	}
+	canon, err := canonicalDir(cwd)
+	if err != nil {
+		return ""
+	}
+	if root := m.resolveGitRoot(ctx, canon); root != "" {
+		return root
+	}
+	return canon
+}
+
+// spaceWorkspace returns the Herdr.app space that owns t, creating its row on first
+// sight. A space row carries the space's name and anchors to its first terminal's
+// directory, so file and git panes keep working while grouping follows Herdr.app.
+func (m *Manager) spaceWorkspace(ctx context.Context, wsMap map[string]*Workspace, t hc.Terminal, names map[string]string) *Workspace {
+	spaceID := t.Labels[HerdrSpaceLabel]
+	if spaceID == "" {
+		return nil
+	}
+	rowID := workspaceIDForPath("herdr-space:" + spaceID)
+	if ws, ok := wsMap[rowID]; ok {
+		return ws
+	}
+	path := m.terminalPath(ctx, t)
+	name := names[spaceID]
+	if name == "" {
+		if where := t.Labels["where"]; where != "" {
+			name = strings.TrimSpace(strings.SplitN(where, " / ", 2)[0])
+		}
+	}
+	if name == "" {
+		name = "space " + spaceID
+	}
+	ws := &Workspace{
+		ID:        rowID,
+		SpaceID:   spaceID,
+		Name:      name,
+		Path:      path,
+		IsGitRepo: path != "" && m.resolveGitRoot(ctx, path) != "",
+		Pinned:    false,
+		Auto:      true,
+		Terminals: []hc.Terminal{},
+		UpdatedMs: int64(t.CreatedMs),
+	}
+	wsMap[rowID] = ws
+	if path != "" {
+		m.mu.Lock()
+		m.byID[rowID] = path
+		m.mu.Unlock()
+	}
+	return ws
+}
+
 // WorkspacePathForCwd returns the canonical path of the workspace that owns dir:
 // the saved workspace whose path matches it, else its git root, else dir itself.
 func (m *Manager) WorkspacePathForCwd(ctx context.Context, dir string) string {
@@ -349,13 +457,14 @@ func (m *Manager) WorkspacePathForCwd(ctx context.Context, dir string) string {
 	return root
 }
 
-func (m *Manager) List(ctx context.Context) ([]Workspace, error) {
+func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, error) {
 	var terminals []hc.Terminal
 	if m.hc != nil {
-		if res, err := m.hc.ListTerminals(ctx, false); err == nil {
+		if res, err := m.hc.ListTerminals(ctx, opts.IncludeFinished); err == nil {
 			terminals = res.Terminals
 		}
 	}
+	spaceNames := m.herdrSpaceNames(ctx)
 
 	wsMap := make(map[string]*Workspace)
 
@@ -380,7 +489,10 @@ func (m *Manager) List(ctx context.Context) ([]Workspace, error) {
 	}
 
 	for _, t := range terminals {
-		ws := pinnedWorkspace(wsMap, t)
+		ws := m.spaceWorkspace(ctx, wsMap, t, spaceNames)
+		if ws == nil {
+			ws = pinnedWorkspace(wsMap, t)
+		}
 		if ws == nil {
 			cwd := t.Cwd
 			if t.Foreground != nil && t.Foreground.Cwd != "" {
@@ -477,7 +589,7 @@ func (m *Manager) ResolveWorkspace(ctx context.Context, id string) (*Workspace, 
 			IsGitRepo: m.resolveGitRoot(ctx, path) != "",
 		}, nil
 	}
-	list, err := m.List(ctx)
+	list, err := m.List(ctx, ListOptions{})
 	if err != nil {
 		return nil, err
 	}

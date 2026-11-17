@@ -76,7 +76,8 @@ export const api = {
       hc_error?: string;
     }>('/api/health'),
 
-  listWorkspaces: () => req<{ workspaces: Workspace[] }>('/api/workspaces'),
+  listWorkspaces: (includeFinished = false) =>
+    req<{ workspaces: Workspace[] }>(`/api/workspaces${includeFinished ? '?include_finished=1' : ''}`),
 
   addWorkspace: (path: string, pin = true) =>
     req<{ workspace: Workspace }>('/api/workspaces', {

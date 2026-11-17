@@ -262,7 +262,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
-	list, err := s.workspaces.List(r.Context())
+	opts := workspace.ListOptions{
+		IncludeFinished: r.URL.Query().Get("include_finished") == "1",
+	}
+	list, err := s.workspaces.List(r.Context(), opts)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return

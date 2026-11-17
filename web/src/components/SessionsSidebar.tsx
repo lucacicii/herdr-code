@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FolderPlus,
   GitBranch,
+  History,
   Layers,
   ListOrdered,
   Loader2,
@@ -27,6 +28,8 @@ interface SessionsSidebarProps {
   onFocusSession: (terminalAddress: string, workspaceId: string | null) => void;
   onOpenAddWorkspace: () => void;
   onTerminalsMutated: () => void;
+  includeFinished: boolean;
+  onToggleIncludeFinished: () => void;
 }
 
 const ANSI_HEX: Record<string, string> = {
@@ -55,6 +58,9 @@ function getSpaceColor(
 ): string {
   if (herdrSpace && colors[herdrSpace.id] && ANSI_HEX[colors[herdrSpace.id]]) {
     return ANSI_HEX[colors[herdrSpace.id]];
+  }
+  if (ws.space_id && colors[ws.space_id] && ANSI_HEX[colors[ws.space_id]]) {
+    return ANSI_HEX[colors[ws.space_id]];
   }
   const firstLabelSpace = ws.terminals.find((t) => t.labels?.['herdr.space'])?.labels?.['herdr.space'];
   if (firstLabelSpace && colors[firstLabelSpace] && ANSI_HEX[colors[firstLabelSpace]]) {
@@ -180,6 +186,8 @@ export function SessionsSidebar({
   onFocusSession,
   onOpenAddWorkspace,
   onTerminalsMutated,
+  includeFinished,
+  onToggleIncludeFinished,
 }: SessionsSidebarProps) {
   const [sortMode, setSortMode] = useState<'priority' | 'grouped'>(() =>
     localStorage.getItem('herdr_code_agent_sort') === 'grouped' ? 'grouped' : 'priority'
@@ -242,7 +250,9 @@ export function SessionsSidebar({
   // Organize Spaces with nested worktrees under main repo
   const organizedSpaces = useMemo(() => {
     const byPath = new Map<string, Workspace>();
-    for (const ws of workspaces) byPath.set(ws.path, ws);
+    // Space rows share their anchor directory with a directory row; worktrees must
+    // stay parented to the directory row so a space never swallows another repo.
+    for (const ws of workspaces) if (!ws.space_id) byPath.set(ws.path, ws);
 
     const childrenByParent = new Map<string, Workspace[]>();
     const roots: Workspace[] = [];
@@ -760,6 +770,18 @@ export function SessionsSidebar({
           <span>Spaces ({workspaces.length})</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <button
+              className={`btn btn-ghost btn-icon ${includeFinished ? 'btn-accent' : ''}`}
+              style={{ width: 20, height: 20 }}
+              title={
+                includeFinished
+                  ? 'Showing closed terminals too (Herdr.app history) — click to hide'
+                  : 'Hide closed terminals — click to show Herdr.app history'
+              }
+              onClick={onToggleIncludeFinished}
+            >
+              <History size={12} />
+            </button>
+            <button
               className="btn btn-ghost btn-icon"
               style={{ width: 20, height: 20 }}
               title="Refresh"
@@ -806,7 +828,9 @@ export function SessionsSidebar({
                 }}
                 onClick={() => onSelectWorkspace(ws.id)}
                 onContextMenu={(e) => openCtxMenu(e, { kind: 'space', ws })}
-                title={`${ws.path}${ws.branch ? ` (${ws.branch})` : ''}`}
+                title={`${ws.space_id ? 'Herdr space — ' : ''}${ws.path}${
+                  ws.branch ? ` (${ws.branch})` : ''
+                }`}
               >
                 <span
                   style={{
@@ -827,6 +851,18 @@ export function SessionsSidebar({
                 </span>
 
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {ws.space_id && (
+                    <span
+                      title="Herdr.app space"
+                      style={{
+                        width: 4,
+                        height: 4,
+                        borderRadius: '50%',
+                        background: avatarColor,
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
                   <span
                     style={{
                       fontWeight: isActive ? 600 : 500,

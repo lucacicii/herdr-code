@@ -55,6 +55,8 @@ export interface Workspace {
   main_repo_path?: string;
   pinned: boolean;
   auto: boolean;
+  /** Set when the row is a Herdr.app space (herdr.space terminal label) rather than a directory pin. */
+  space_id?: string;
   terminals: TerminalInfo[];
   counts: WorkspaceCounts;
   updated_ms: number;
