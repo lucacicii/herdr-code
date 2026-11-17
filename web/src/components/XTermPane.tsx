@@ -2,11 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { ImageAddon } from '@xterm/addon-image';
 import '@xterm/xterm/css/xterm.css';
 import { wsUrl } from '../lib/api';
 import { createFileLinkProvider } from '../lib/terminalLinks';
-import { InlineImageStream } from '../lib/terminalImages';
+import { InlineImageLayer } from '../lib/xtermInlineImages';
 import type { TerminalInfo } from '../types/api';
 
 export interface XTermPaneHandle {
@@ -191,13 +190,15 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
     const linksAddon = new WebLinksAddon();
-    // Inline images: Sixel (DCS) + iTerm2 IIP (OSC 1337;File=...)
-    const imageAddon = new ImageAddon({ storageLimit: 64 });
 
     term.loadAddon(fitAddon);
     term.loadAddon(linksAddon);
-    term.loadAddon(imageAddon);
     term.open(container);
+
+    // Inline images (iTerm2 OSC 1337) are painted into a buffer-line overlay, not
+    // into the cells: a TUI repaints its frame constantly and cell-bound pictures
+    // are deleted by the next frame.
+    const imageLayer = new InlineImageLayer(term);
 
     const fileLinkDisp = term.registerLinkProvider(
       createFileLinkProvider(term, (path, line) => {
@@ -225,9 +226,6 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
     socket.binaryType = 'arraybuffer';
     wsRef.current = socket;
 
-    const images = new InlineImageStream();
-    let writeChain: Promise<void> | null = null;
-
     socket.onopen = () => {
       setConnState('open');
       try {
@@ -242,20 +240,7 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
       if (ev.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(ev.data);
         if (bytes.length > 1 && bytes[0] === 0x00) {
-          const parts = images.write(bytes.subarray(1));
-          if (Array.isArray(parts) && !writeChain) {
-            for (const part of parts) term.write(part);
-          } else {
-            // A WebP payload is being re-encoded: hold later chunks so the
-            // picture keeps its place in the transcript.
-            const queued = (writeChain ?? Promise.resolve()).then(async () => {
-              for (const part of await parts) term.write(part);
-            });
-            writeChain = queued;
-            void queued.then(() => {
-              if (writeChain === queued) writeChain = null;
-            });
-          }
+          term.write(bytes.subarray(1));
         }
         return;
       }
@@ -335,6 +320,7 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
       dataDisp.dispose();
       binDisp.dispose();
       fileLinkDisp.dispose();
+      imageLayer.dispose();
       socket.close();
       term.dispose();
       termRef.current = null;
