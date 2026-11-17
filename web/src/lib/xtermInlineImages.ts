@@ -245,7 +245,6 @@ export class InlineImageLayer implements IDisposable {
         ctx.drawImage(p.bitmap, 0, sy, p.bitmap.width, (interH / drawH) * p.bitmap.height, x, interTop, drawW, interH);
       }
     }
-    return true;
   }
 
   /** True when the buffer line holds no glyphs under the picture's column span. */
