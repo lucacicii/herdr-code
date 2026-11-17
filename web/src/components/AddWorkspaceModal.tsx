@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Folder, FolderPlus, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Workspace } from '../types/api';
@@ -17,22 +17,52 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
   const [dirs, setDirs] = useState<{ name: string; path: string }[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const navTimer = useRef<number | null>(null);
+  const navSeq = useRef(0);
 
-  const browse = async (target: string): Promise<boolean> => {
+  // `echo` rewrites the path input from the canonical directory (button / row
+  // navigation); typing suppresses it so the caret doesn't jump.
+  const browse = async (
+    target: string,
+    opts: { echo?: boolean; quiet?: boolean } = {},
+  ): Promise<boolean> => {
+    const seq = ++navSeq.current;
     try {
       const res = await api.browseLocalDirs(target);
+      if (seq !== navSeq.current) return false; // a newer browse superseded this one
       setCurrentDir(res.current);
       setParentDir(res.parent);
       setDirs(res.dirs);
-      setPathInput(res.current);
+      if (opts.echo ?? true) setPathInput(res.current);
       setError('');
       localStorage.setItem(LAST_DIR_KEY, res.current);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (seq !== navSeq.current) return false;
+      if (!opts.quiet) setError(err instanceof Error ? err.message : String(err));
       return false;
     }
   };
+
+  const cancelAutoNav = () => {
+    if (navTimer.current !== null) {
+      window.clearTimeout(navTimer.current);
+      navTimer.current = null;
+    }
+    navSeq.current++; // drop any in-flight auto-navigation result
+  };
+
+  const scheduleAutoNav = (value: string) => {
+    cancelAutoNav();
+    const typed = value.trim();
+    if (!typed) return;
+    navTimer.current = window.setTimeout(() => {
+      navTimer.current = null;
+      void browse(typed, { echo: false, quiet: true });
+    }, 250);
+  };
+
+  useEffect(() => cancelAutoNav, []);
 
   useEffect(() => {
     // Reopen where the user left off; fall back to home if it vanished.
@@ -88,14 +118,23 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
             <input
               className="input mono"
               value={pathInput}
-              onChange={(e) => setPathInput(e.target.value)}
+              onChange={(e) => {
+                setPathInput(e.target.value);
+                scheduleAutoNav(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleSubmit();
               }}
               placeholder="/path/to/project"
               style={{ flex: 1 }}
             />
-            <button className="btn" onClick={() => void browse(pathInput || '~')}>
+            <button
+              className="btn"
+              onClick={() => {
+                cancelAutoNav();
+                void browse(pathInput || '~');
+              }}
+            >
               Browse
             </button>
           </div>
@@ -139,8 +178,14 @@ export function AddWorkspaceModal({ onClose, onAdded }: AddWorkspaceModalProps) 
                   key={d.path}
                   className="tree-row"
                   style={{ paddingLeft: 8 }}
-                  onClick={() => setPathInput(d.path)}
-                  onDoubleClick={() => void browse(d.path)}
+                  onClick={() => {
+                    cancelAutoNav();
+                    setPathInput(d.path);
+                  }}
+                  onDoubleClick={() => {
+                    cancelAutoNav();
+                    void browse(d.path);
+                  }}
                 >
                   <Folder size={14} style={{ color: 'var(--text-secondary)' }} />
                   <span>{d.name}</span>
