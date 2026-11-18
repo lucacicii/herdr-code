@@ -119,6 +119,19 @@ func (c *Client) Do(ctx context.Context, command string, args map[string]string)
 	return result, nil
 }
 
+// Rename renames a space. An empty name asks the app to name it after where its
+// first terminal is again, which is how a space gets back to a derived name.
+//
+// The name is only a label: it never changes the space's folder or the directory
+// its tabs run in, so the two can legitimately disagree.
+func (c *Client) Rename(ctx context.Context, spaceID, name string) error {
+	if spaceID == "" {
+		return errors.New("space id is required")
+	}
+	_, err := c.Do(ctx, "space.rename", map[string]string{"id": spaceID, "name": name})
+	return err
+}
+
 // Terminal is one terminal the app shows in a pane.
 type Terminal struct {
 	Terminal string `json:"terminal"`

@@ -128,12 +128,27 @@ export const api = {
       body: JSON.stringify({ path }),
     }),
 
+  // Opens a directory itself in the desktop's file manager.
+  openPath: (path: string) =>
+    req<{ ok: boolean; path: string }>('/api/fs/open', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+
   gitStatus: (wsId: string) =>
     req<RepoStatus>(`/api/workspaces/${encodeURIComponent(wsId)}/git/status`),
 
   listTemplates: () => req<{ templates: TemplateInfo[] }>('/api/templates'),
 
   herdrSpaces: () => req<import('../types/api').HerdrSpacesResponse>('/api/herdr/spaces'),
+
+  // A space name is a label the app owns; an empty name asks it to derive one
+  // again from where the space's first terminal is.
+  renameSpace: (spaceId: string, name: string) =>
+    req<{ ok: boolean; space_id: string; name: string }>(
+      `/api/herdr/spaces/${encodeURIComponent(spaceId)}/rename`,
+      { method: 'POST', body: JSON.stringify({ name }) }
+    ),
 
   listTerminals: () => req<{ terminals: TerminalInfo[] }>('/api/terminals'),
 

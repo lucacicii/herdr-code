@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  FolderOpen,
   FolderPlus,
   GitBranch,
   History,
@@ -9,6 +10,7 @@ import {
   ListOrdered,
   Loader2,
   PanelsTopLeft,
+  Pencil,
   Pin,
   RefreshCw,
   Terminal as TerminalIcon,
@@ -175,7 +177,6 @@ type CtxMenu =
   | { kind: 'terminal'; t: TerminalInfo; x: number; y: number };
 
 const MENU_WIDTH = 190;
-const MENU_HEIGHT = 74;
 
 export function SessionsSidebar({
   workspaces,
@@ -203,6 +204,17 @@ export function SessionsSidebar({
   const [now, setNow] = useState(() => Date.now());
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Clamp the context menu against its rendered height: a space menu grows or
+  // shrinks with the optional "Show in Herdr.app" item.
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!ctxMenu || !el) return;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(8, Math.min(ctxMenu.x, window.innerWidth - rect.width - 8));
+    const y = Math.max(8, Math.min(ctxMenu.y, window.innerHeight - rect.height - 8));
+    if (x !== ctxMenu.x || y !== ctxMenu.y) setCtxMenu({ ...ctxMenu, x, y });
+  }, [ctxMenu]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30000);
@@ -446,8 +458,11 @@ export function SessionsSidebar({
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    // A space menu holds 2–3 items depending on live sessions, so only the raw
+    // cursor point is taken here; the layout effect below clamps against the
+    // rendered menu box.
     const x = Math.min(e.clientX, window.innerWidth - MENU_WIDTH - 8);
-    const y = Math.min(e.clientY, window.innerHeight - MENU_HEIGHT - 8);
+    const y = e.clientY;
     setCtxMenu(
       payload.kind === 'space'
         ? { kind: 'space', ws: payload.ws, x, y }
@@ -502,6 +517,33 @@ export function SessionsSidebar({
       // ignore
     }
     onTerminalsMutated();
+  };
+
+  const renameSpace = async (ws: Workspace) => {
+    setCtxMenu(null);
+    if (!ws.space_id) return;
+    const answer = window.prompt(
+      `Rename space "${ws.name}"\n\nLeave it empty to let Herdr name it after its first terminal.`,
+      ws.name
+    );
+    if (answer === null) return;
+    const name = answer.trim();
+    if (name === ws.name) return;
+    try {
+      await api.renameSpace(ws.space_id, name);
+      onTerminalsMutated();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not rename this space');
+    }
+  };
+
+  const openSpaceDir = async (ws: Workspace) => {
+    setCtxMenu(null);
+    try {
+      await api.openPath(ws.path);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not open this directory');
+    }
   };
 
   const adoptSpace = async (ws: Workspace) => {
@@ -1123,6 +1165,16 @@ export function SessionsSidebar({
           {ctxMenu.kind === 'space' ? (
             <>
               <div className="ctx-menu-label">{ctxMenu.ws.name}</div>
+              {ctxMenu.ws.space_id && (
+                <button className="ctx-menu-item" onClick={() => void renameSpace(ctxMenu.ws)}>
+                  <Pencil size={12} />
+                  Rename Space…
+                </button>
+              )}
+              <button className="ctx-menu-item" onClick={() => void openSpaceDir(ctxMenu.ws)}>
+                <FolderOpen size={12} />
+                Open Directory
+              </button>
               {ctxMenu.ws.terminals.some((t) => t.state === 'live') && (
                 <button className="ctx-menu-item" onClick={() => void adoptSpace(ctxMenu.ws)}>
                   <PanelsTopLeft size={12} />

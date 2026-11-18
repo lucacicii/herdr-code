@@ -182,6 +182,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/fs/browse", s.authJSON(s.handleBrowseLocalDirs))
 	// Terminal links hand a path to the operating system.
 	s.mux.HandleFunc("POST /api/fs/reveal", s.authJSON(s.handleRevealPath))
+	// Sidebar spaces open their own directory in the desktop's file manager.
+	s.mux.HandleFunc("POST /api/fs/open", s.authJSON(s.handleOpenPath))
 
 	// Workspace files & search
 	s.mux.HandleFunc("GET /api/workspaces/{id}/tree", s.authJSON(s.handleWorkspaceTree))
@@ -193,6 +195,8 @@ func (s *Server) registerRoutes() {
 
 	// Terminals & templates
 	s.mux.HandleFunc("GET /api/herdr/spaces", s.authJSON(s.handleHerdrSpaces))
+	// A space name is only a label; renaming it is the app's job, not ours.
+	s.mux.HandleFunc("POST /api/herdr/spaces/{id}/rename", s.authJSON(s.handleRenameSpace))
 	s.mux.HandleFunc("GET /api/settings/dependencies", s.authJSON(s.handleGetDependencies))
 	s.mux.HandleFunc("POST /api/settings/dependencies/install", s.authJSON(s.handleInstallDependency))
 	s.mux.HandleFunc("GET /api/templates", s.authJSON(s.handleListTemplates))
@@ -495,6 +499,18 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevealPath(w http.ResponseWriter, r *http.Request) {
+	s.handPathToOS(w, r, revealInOS)
+}
+
+// handleOpenPath opens the directory itself in the desktop's file manager, for
+// sidebar rows whose whole point is the folder rather than one file inside it.
+func (s *Server) handleOpenPath(w http.ResponseWriter, r *http.Request) {
+	s.handPathToOS(w, r, openInOS)
+}
+
+// handPathToOS decodes the shared {path} body, validates it, and hands the
+// absolute path to the given desktop opener.
+func (s *Server) handPathToOS(w http.ResponseWriter, r *http.Request, open func(string) error) {
 	var body struct {
 		Path string `json:"path"`
 	}
@@ -516,7 +532,7 @@ func (s *Server) handleRevealPath(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := revealInOS(abs); err != nil {
+	if err := open(abs); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -801,6 +817,33 @@ func (s *Server) handleKillTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleRenameSpace(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSONError(w, http.StatusBadRequest, errors.New("space id is required"))
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	if !s.herdrApp.Available() {
+		writeJSONError(w, http.StatusNotImplemented, happ.ErrUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	name := strings.TrimSpace(body.Name)
+	if err := s.herdrApp.Rename(ctx, id, name); err != nil {
+		writeJSONError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "space_id": id, "name": name})
 }
 
 func (s *Server) handleHerdrSpaces(w http.ResponseWriter, r *http.Request) {
