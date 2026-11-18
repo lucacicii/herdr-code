@@ -175,6 +175,9 @@ export const api = {
   listSessions: (workspaceId: string) =>
     req<SessionInfo[]>(`/api/sessions?workspace_id=${encodeURIComponent(workspaceId)}`),
 
+  /** Every conversation, from every space, closed ones included. */
+  listAllSessions: () => req<SessionInfo[]>('/api/sessions'),
+
   /** What a terminal printed: live scrollback or the history kept after it ended. */
   terminalOutput: (address: string, lines = 2000) =>
     req<TerminalOutput>(`/api/terminals/${encodeURIComponent(address)}/output?lines=${lines}`),

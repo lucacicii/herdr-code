@@ -104,6 +104,26 @@ func Describe(terminal hc.Terminal, ix *Index) Info {
 	return info
 }
 
+// FromStored describes a conversation the agent still keeps on disk even though no
+// terminal remembers running it — the only trace a closed space leaves behind.
+func FromStored(s Session) Info {
+	info := Info{
+		Agent:     s.Agent,
+		SessionID: s.ID,
+		IDKnown:   s.ID != "",
+		Title:     CleanTitle(s.Title),
+		Cwd:       s.Cwd,
+		Where:     filepath.Base(s.Cwd),
+		StartedMs: uint64(s.StartMs),
+	}
+	if resume, _, known := agentSpec(s.Agent); known && s.ID != "" {
+		info.ResumeArgv = []string{s.Agent, resume, s.ID}
+	} else {
+		info.ResumeArgv = []string{s.Agent}
+	}
+	return info
+}
+
 // publishedSession splits a label like "omp:id:01a1e76…" into agent and id.
 func publishedSession(value string) (agent, id string) {
 	prefix, rest, ok := strings.Cut(value, ":id:")

@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
-  FolderPlus,
   GitBranch,
   History,
   Layers,
@@ -29,9 +28,10 @@ interface SessionsSidebarProps {
   herdrColors: Record<string, string>;
   onSelectWorkspace: (wsId: string) => void;
   onFocusSession: (terminalAddress: string, workspaceId: string | null) => void;
-  onOpenAddWorkspace: () => void;
   onTerminalsMutated: () => void;
   onOpenHistory: (wsId: string) => void;
+  // Every space's conversations at once, filterable by space.
+  onOpenAllSessions: () => void;
   includeFinished: boolean;
   onToggleIncludeFinished: () => void;
 }
@@ -187,9 +187,9 @@ export function SessionsSidebar({
   herdrColors,
   onSelectWorkspace,
   onFocusSession,
-  onOpenAddWorkspace,
   onTerminalsMutated,
   onOpenHistory,
+  onOpenAllSessions,
   includeFinished,
   onToggleIncludeFinished,
 }: SessionsSidebarProps) {
@@ -262,17 +262,19 @@ export function SessionsSidebar({
     return m;
   }, [workspaces]);
 
-  // Organize Spaces with nested worktrees under main repo
+  // Only Herdr spaces get a row: a bare directory is not something the sidebar
+  // shows, it is just where a space happens to live.
+  const spaceRows = useMemo(() => workspaces.filter((w) => w.space_id), [workspaces]);
+
+  // Nest worktrees under the space that holds their main repository.
   const organizedSpaces = useMemo(() => {
     const byPath = new Map<string, Workspace>();
-    // Space rows share their anchor directory with a directory row; worktrees must
-    // stay parented to the directory row so a space never swallows another repo.
-    for (const ws of workspaces) if (!ws.space_id) byPath.set(ws.path, ws);
+    for (const ws of spaceRows) byPath.set(ws.path, ws);
 
     const childrenByParent = new Map<string, Workspace[]>();
     const roots: Workspace[] = [];
-    for (const ws of workspaces) {
-      if (ws.main_repo_path && byPath.has(ws.main_repo_path)) {
+    for (const ws of spaceRows) {
+      if (ws.main_repo_path && ws.main_repo_path !== ws.path && byPath.has(ws.main_repo_path)) {
         const arr = childrenByParent.get(ws.main_repo_path) || [];
         arr.push(ws);
         childrenByParent.set(ws.main_repo_path, arr);
@@ -289,7 +291,7 @@ export function SessionsSidebar({
       }
     }
     return ordered;
-  }, [workspaces]);
+  }, [spaceRows]);
 
   // Build agent/session list with parent->child hierarchy
   const { topItems, childrenByParent } = useMemo(() => {
@@ -823,15 +825,15 @@ export function SessionsSidebar({
             textTransform: 'uppercase',
           }}
         >
-          <span>Spaces ({workspaces.filter((w) => w.space_id).length})</span>
+          <span>Spaces ({spaceRows.length})</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <button
               className={`btn btn-ghost btn-icon ${includeFinished ? 'btn-accent' : ''}`}
               style={{ width: 20, height: 20 }}
               title={
                 includeFinished
-                  ? 'Showing closed terminals too (Herdr.app history) — click to hide'
-                  : 'Hide closed terminals — click to show Herdr.app history'
+                  ? 'Showing history: closed terminals and spaces you have opened before'
+                  : 'History is off — click to include closed terminals and old spaces'
               }
               onClick={onToggleIncludeFinished}
             >
@@ -845,14 +847,6 @@ export function SessionsSidebar({
             >
               <RefreshCw size={12} />
             </button>
-            <button
-              className="btn btn-ghost btn-icon"
-              style={{ width: 20, height: 20 }}
-              title="Add Workspace"
-              onClick={onOpenAddWorkspace}
-            >
-              <FolderPlus size={12} />
-            </button>
           </div>
         </div>
 
@@ -860,7 +854,7 @@ export function SessionsSidebar({
           style={{ flex: 1, overflowY: 'auto', padding: '0 6px 6px' }}
           onScroll={() => setCtxMenu(null)}
         >
-          {organizedSpaces.map(({ ws, isWorktree }, index) => {
+          {organizedSpaces.map(({ ws, isWorktree }) => {
             const isActive = ws.id === activeWorkspaceId;
             const firstAddr = ws.terminals[0]?.address;
             const herdrMeta = firstAddr ? tabTerminalMap.get(firstAddr) : undefined;
@@ -874,20 +868,6 @@ export function SessionsSidebar({
 
             return (
               <Fragment key={ws.id}>
-                {!ws.space_id && (index === 0 || !!organizedSpaces[index - 1]?.ws.space_id) && (
-                  <div
-                    style={{
-                      padding: '7px 8px 3px',
-                      fontSize: 10.5,
-                      fontWeight: 600,
-                      color: 'var(--text-muted)',
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Projects
-                  </div>
-                )}
               <div
                 key={ws.id}
                 className={`tree-row ${isActive ? 'active' : ''}`}
@@ -896,12 +876,13 @@ export function SessionsSidebar({
                   paddingRight: 8,
                   height: 30,
                   gap: 8,
+                  opacity: ws.closed ? 0.55 : 1,
                 }}
                 onClick={() => onSelectWorkspace(ws.id)}
                 onContextMenu={(e) => openCtxMenu(e, { kind: 'space', ws })}
-                title={`${ws.space_id ? 'Herdr space — ' : ''}${ws.path}${
+                title={`${ws.space_id ? 'Herdr space' : 'Directory'} — ${ws.path}${
                   ws.branch ? ` (${ws.branch})` : ''
-                }`}
+                }${ws.closed ? ' · closed, shown for its history' : ''}`}
               >
                 <span
                   style={{
@@ -945,6 +926,20 @@ export function SessionsSidebar({
                   >
                     {displayName}
                   </span>
+                  {ws.closed && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--text-muted)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 4,
+                        padding: '0 4px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      closed
+                    </span>
+                  )}
                   {showBranch && (
                     <span
                       className="mono"
@@ -1052,6 +1047,14 @@ export function SessionsSidebar({
               {agentsOnly ? 'Agents' : 'All'}
             </button>
 
+            <button
+              className="btn btn-ghost btn-icon"
+              style={{ width: 20, height: 20 }}
+              title="All conversations, filterable by space"
+              onClick={onOpenAllSessions}
+            >
+              <History size={12} />
+            </button>
             <button
               className="btn btn-ghost btn-icon"
               style={{ width: 20, height: 20 }}
@@ -1165,7 +1168,7 @@ export function SessionsSidebar({
           {ctxMenu.kind === 'space' ? (
             <>
               <div className="ctx-menu-label">{ctxMenu.ws.name}</div>
-              {ctxMenu.ws.space_id && (
+              {ctxMenu.ws.space_id && !ctxMenu.ws.closed && (
                 <button className="ctx-menu-item" onClick={() => void renameSpace(ctxMenu.ws)}>
                   <Pencil size={12} />
                   Rename Space…
@@ -1181,10 +1184,12 @@ export function SessionsSidebar({
                   {ctxMenu.ws.space_id ? 'Add to Herdr Space' : 'Show in Herdr.app'}
                 </button>
               )}
-              <button className="ctx-menu-item danger" onClick={() => void closeSpace(ctxMenu.ws)}>
-                <X size={12} />
-                Close Space
-              </button>
+              {!ctxMenu.ws.closed && (
+                <button className="ctx-menu-item danger" onClick={() => void closeSpace(ctxMenu.ws)}>
+                  <X size={12} />
+                  Close Space
+                </button>
+              )}
             </>
           ) : (
             <>

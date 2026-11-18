@@ -572,38 +572,82 @@ func (s *Server) handleListTerminals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-// Sessions of one space, newest first, with the command that resumes each.
+// sessionRow is one conversation plus the space it belongs to, so the sidebar can
+// list every session at once and filter it by space.
+type sessionRow struct {
+	agentsessions.Info
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+}
+
+// handleListSessions lists conversations: one space's when workspace_id is given,
+// every space's otherwise. Rows come from the terminals a space ran and, when it
+// has none left (a closed space, or a conversation whose terminal is long gone),
+// from the agents' own stores keyed by the space's directory.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")
-	if workspaceID == "" {
-		writeJSONError(w, http.StatusBadRequest, errors.New("workspace_id is required"))
-		return
-	}
 	rows, err := s.workspaces.List(r.Context(), workspace.ListOptions{IncludeFinished: true})
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, err)
 		return
 	}
-	var row *workspace.Workspace
-	for i := range rows {
-		if rows[i].ID == workspaceID {
-			row = &rows[i]
-			break
+	targets := rows
+	if workspaceID != "" {
+		targets = nil
+		for _, row := range rows {
+			if row.ID == workspaceID {
+				targets = []workspace.Workspace{row}
+				break
+			}
+		}
+		if len(targets) == 0 {
+			writeJSONError(w, http.StatusNotFound, errors.New("unknown workspace"))
+			return
 		}
 	}
-	if row == nil {
-		writeJSONError(w, http.StatusNotFound, errors.New("unknown workspace"))
-		return
-	}
 
-	sessions := make([]agentsessions.Info, 0, len(row.Terminals))
-	for _, terminal := range row.Terminals {
-		sessions = append(sessions, agentsessions.Describe(terminal, s.sessions))
+	out := make([]sessionRow, 0, 16)
+	// One conversation is one row, however many spaces share its directory.
+	seen := make(map[string]bool, 16)
+	for _, row := range targets {
+		for _, terminal := range row.Terminals {
+			info := agentsessions.Describe(terminal, s.sessions)
+			if info.SessionID != "" {
+				if seen[info.SessionID] {
+					continue
+				}
+				seen[info.SessionID] = true
+			}
+			out = append(out, sessionRow{Info: info, WorkspaceID: row.ID, WorkspaceName: row.Name})
+		}
+		if row.Path == "" {
+			continue
+		}
+		for _, stored := range s.sessions.For(row.Path) {
+			if stored.ID != "" {
+				if seen[stored.ID] {
+					continue
+				}
+				seen[stored.ID] = true
+			}
+			out = append(out, sessionRow{
+				Info:          agentsessions.FromStored(stored),
+				WorkspaceID:   row.ID,
+				WorkspaceName: row.Name,
+			})
+		}
 	}
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].FinishedMs > sessions[j].FinishedMs
-	})
-	writeJSON(w, http.StatusOK, sessions)
+	sort.Slice(out, func(i, j int) bool { return sessionWhen(out[i].Info) > sessionWhen(out[j].Info) })
+	writeJSON(w, http.StatusOK, out)
+}
+
+// sessionWhen is the timestamp a row sorts by: when it ended if it ended, else
+// when it started. Stored sessions only know the latter.
+func sessionWhen(info agentsessions.Info) uint64 {
+	if info.FinishedMs > info.StartedMs {
+		return info.FinishedMs
+	}
+	return info.StartedMs
 }
 
 // TerminalOutput replays what a terminal printed: live panes read from the core's

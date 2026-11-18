@@ -29,21 +29,24 @@ type StatusCounts struct {
 }
 
 type Workspace struct {
-	ID           string        `json:"id"`
-	Name         string        `json:"name"`
-	Path         string        `json:"path"`
-	Machine      string        `json:"machine,omitempty"`
-	IsGitRepo    bool          `json:"is_git_repo"`
-	Branch       string        `json:"branch,omitempty"`
-	Ahead        int           `json:"ahead,omitempty"`
-	Behind       int           `json:"behind,omitempty"`
-	MainRepoPath string        `json:"main_repo_path,omitempty"`
-	Pinned       bool          `json:"pinned"`
-	Auto         bool          `json:"auto"`
-	SpaceID      string        `json:"space_id,omitempty"`
-	Terminals    []hc.Terminal `json:"terminals"`
-	Counts       StatusCounts  `json:"counts"`
-	UpdatedMs    int64         `json:"updated_ms"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Machine      string `json:"machine,omitempty"`
+	IsGitRepo    bool   `json:"is_git_repo"`
+	Branch       string `json:"branch,omitempty"`
+	Ahead        int    `json:"ahead,omitempty"`
+	Behind       int    `json:"behind,omitempty"`
+	MainRepoPath string `json:"main_repo_path,omitempty"`
+	Pinned       bool   `json:"pinned"`
+	Auto         bool   `json:"auto"`
+	SpaceID      string `json:"space_id,omitempty"`
+	// Closed marks a row for a space this workbench has seen before but the app
+	// no longer publishes: its terminals are gone, its history is not.
+	Closed    bool          `json:"closed,omitempty"`
+	Terminals []hc.Terminal `json:"terminals"`
+	Counts    StatusCounts  `json:"counts"`
+	UpdatedMs int64         `json:"updated_ms"`
 }
 
 type savedWorkspace struct {
@@ -64,6 +67,10 @@ type Manager struct {
 	byID         map[string]string         // id -> canonical path
 	spaceByRow   map[string]string         // row id -> Herdr app space id
 	gitRootCache map[string]string         // cwd -> gitRoot ("" if not repo)
+
+	seenMu   sync.RWMutex
+	seenPath string               // spaces-seen.json next to workspaces.json
+	seen     map[string]seenSpace // space id -> last sighting
 }
 
 // SpaceLister is the Herdr app's own space list: the same spaces, names, order and
@@ -100,6 +107,7 @@ func NewManager(hcClient *hc.Client, configPath string) *Manager {
 		gitRootCache: make(map[string]string),
 	}
 	m.load()
+	m.initSeen()
 	return m
 }
 
@@ -421,9 +429,15 @@ func (m *Manager) terminalPath(ctx context.Context, t hc.Terminal) string {
 // spaceWorkspace returns the Herdr.app space that owns t, creating its row on first
 // sight. A space row carries the space's name and anchors to its first terminal's
 // directory, so file and git panes keep working while grouping follows Herdr.app.
-func (m *Manager) spaceWorkspace(ctx context.Context, wsMap, byPath map[string]*Workspace, t hc.Terminal, names map[string]string) *Workspace {
+func (m *Manager) spaceWorkspace(ctx context.Context, wsMap, byPath map[string]*Workspace, t hc.Terminal, names map[string]string, live map[string]bool) *Workspace {
 	spaceID := t.Labels[HerdrSpaceLabel]
 	if spaceID == "" {
+		return nil
+	}
+	// A finished terminal can still carry the label of a space the app has since
+	// deleted. That is not a space any more: treating it as one would resurrect a
+	// phantom row next to the real one for the same directory.
+	if live != nil && !live[spaceID] {
 		return nil
 	}
 	rowID := workspaceIDForPath("herdr-space:" + spaceID)
@@ -583,8 +597,68 @@ func (m *Manager) List(ctx context.Context, opts ListOptions) ([]Workspace, erro
 		}
 	}
 
+	// Remember what the app published, so a space that gets closed later keeps its
+	// name and its directory (and with them, its history).
+	sightings := make([]spaceRow, 0, len(appSpaces))
+	for _, sp := range appSpaces {
+		path := ""
+		if sp.Machine == nil || *sp.Machine == "" {
+			if canon, err := canonicalDir(sp.Folder); err == nil {
+				path = canon
+			}
+		}
+		sightings = append(sightings, spaceRow{ID: sp.ID, Name: sp.Name, Path: path})
+	}
+	m.rememberSpaces(sightings)
+
+	// History: spaces this workbench has shown before but the app no longer has.
+	// They keep their row so their conversations stay reachable, but they carry no
+	// terminals — the history comes from the agents' own stores.
+	if opts.IncludeFinished {
+		live := make(map[string]bool, len(appSpaces))
+		for _, sp := range appSpaces {
+			live[sp.ID] = true
+		}
+		for _, sp := range m.forgottenSpaces(live) {
+			rowID := workspaceIDForPath("herdr-space:" + sp.ID)
+			if _, exists := wsMap[rowID]; exists {
+				continue
+			}
+			path := sp.Path
+			if path == "" {
+				continue
+			}
+			name := sp.Name
+			if name == "" {
+				name = filepath.Base(path)
+			}
+			wsMap[rowID] = &Workspace{
+				ID:        rowID,
+				Name:      name,
+				Path:      path,
+				SpaceID:   sp.ID,
+				Closed:    true,
+				IsGitRepo: m.resolveGitRoot(ctx, path) != "",
+				Auto:      true,
+				Terminals: []hc.Terminal{},
+				UpdatedMs: sp.LastSeenMs,
+			}
+			m.mu.Lock()
+			m.byID[rowID] = path
+			m.mu.Unlock()
+		}
+	}
+
+	liveSpaceIDs := map[string]bool{}
+	for _, sp := range appSpaces {
+		liveSpaceIDs[sp.ID] = true
+	}
+	if len(appSpaces) == 0 {
+		// No app list (or it failed): fall back to the labels on terminals.
+		liveSpaceIDs = nil
+	}
 	for _, t := range terminals {
-		ws := m.spaceWorkspace(ctx, wsMap, byPath, t, spaceNames)
+		ws := m.spaceWorkspace(ctx, wsMap, byPath, t, spaceNames, liveSpaceIDs)
 		if ws == nil {
 			ws = pinnedWorkspace(wsMap, t)
 		}

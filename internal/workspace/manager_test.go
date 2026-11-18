@@ -65,7 +65,7 @@ func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
 			"where":         "herdr-code / 1",
 		},
 	}
-	ws := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, labelled, nil)
+	ws := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, labelled, nil, nil)
 	if ws == nil {
 		t.Fatalf("expected a space row for a labelled terminal")
 	}
@@ -82,7 +82,7 @@ func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
 
 	// Doc names win, and every terminal of the space lands in the same row.
 	second := hc.Terminal{Address: "t2", Cwd: dir, Labels: map[string]string{HerdrSpaceLabel: "sp123"}}
-	if got := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, second, map[string]string{"sp123": "TMS"}); got != ws {
+	if got := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, second, map[string]string{"sp123": "TMS"}, nil); got != ws {
 		t.Fatalf("expected the same row for the same space, got %+v", got)
 	}
 	if ws.Name != "herdr-code" {
@@ -90,7 +90,7 @@ func TestHerdrSpaceRowGroupsTerminalsByLabel(t *testing.T) {
 	}
 
 	// Terminals no space claims keep using directory grouping.
-	if got := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, hc.Terminal{Address: "t3", Cwd: dir}, nil); got != nil {
+	if got := mgr.spaceWorkspace(context.Background(), wsMap, map[string]*Workspace{}, hc.Terminal{Address: "t3", Cwd: dir}, nil, nil); got != nil {
 		t.Fatalf("expected no space row without herdr.space label, got %+v", got)
 	}
 }
@@ -110,7 +110,7 @@ func TestHerdrSpaceRowMergesWithPinnedDirectory(t *testing.T) {
 		Address: "t1",
 		Cwd:     canon,
 		Labels:  map[string]string{HerdrSpaceLabel: "sp9", "where": "tms / Pi"},
-	}, nil)
+	}, nil, nil)
 	if got != pinned || pinned.SpaceID != "sp9" {
 		t.Fatalf("expected the pinned row to carry the space, got %+v", got)
 	}
@@ -123,7 +123,7 @@ func TestHerdrSpaceRowMergesWithPinnedDirectory(t *testing.T) {
 		Address: "t2",
 		Cwd:     canon,
 		Labels:  map[string]string{HerdrSpaceLabel: "sp10", "where": "other / 1"},
-	}, nil)
+	}, nil, nil)
 	if other == pinned || other.SpaceID != "sp10" {
 		t.Fatalf("expected a separate row for a second space, got %+v", other)
 	}
@@ -191,5 +191,40 @@ func TestPinnedWorkspaceKeepsTerminalInCreationWorkspace(t *testing.T) {
 
 	if got := mgr.WorkspacePathForCwd(context.Background(), dir); got != ws.Path {
 		t.Fatalf("expected WorkspacePathForCwd(%s) = %s, got %s", dir, ws.Path, got)
+	}
+}
+
+func TestClosedSpaceKeepsItsRowForHistory(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(nil, filepath.Join(t.TempDir(), "workspaces.json"))
+	mgr.SetSpaceLister(fakeSpaces{{ID: "spA", Name: "proj", Folder: dir}})
+
+	list, err := mgr.List(context.Background(), ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Closed {
+		t.Fatalf("expected one live space row, got %+v", list)
+	}
+
+	// The app closes the space: it is gone from the published list.
+	mgr.SetSpaceLister(fakeSpaces{})
+	list, err = mgr.List(context.Background(), ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("expected no rows without history, got %+v", list)
+	}
+
+	list, err = mgr.List(context.Background(), ListOptions{IncludeFinished: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || !list[0].Closed || list[0].SpaceID != "spA" {
+		t.Fatalf("expected the closed space back for history, got %+v", list)
+	}
+	if list[0].Path != dir || list[0].Name != "proj" {
+		t.Fatalf("closed row lost its identity: %+v", list[0])
 	}
 }

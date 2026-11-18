@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AddWorkspaceModal } from './components/AddWorkspaceModal';
 import { CenterCodePane } from './components/CenterCodePane';
 import { FileDock } from './components/FileDock';
 import { NewTerminalModal } from './components/NewTerminalModal';
@@ -8,6 +7,7 @@ import { RightTerminalPane, type RightTerminalPaneHandle } from './components/Ri
 import { SettingsModal } from './components/SettingsModal';
 import { SessionsSidebar } from './components/SessionsSidebar';
 import { SpaceHistoryDrawer } from './components/SpaceHistoryDrawer';
+import { SessionsDrawer } from './components/SessionsDrawer';
 import { TopBar } from './components/TopBar';
 import { api, initTokenFromEnv, setAuthToken, wsUrl } from './lib/api';
 import { formatLineAnchor } from './lib/references';
@@ -80,12 +80,13 @@ export function App() {
 
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [showQuickOpen, setShowQuickOpen] = useState(false);
-  const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [showNewTerminal, setShowNewTerminal] = useState(false);
   // Directory the new-terminal dialog should start in: the focused tab's own cwd
   // when it has one, so a terminal opened from a tab lands where that tab lives.
   const [newTerminalCwd, setNewTerminalCwd] = useState<string | null>(null);
   const [historyWorkspaceId, setHistoryWorkspaceId] = useState<string | null>(null);
+  // Every space's conversations in one list, reached from the sessions header.
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPromptReason, setSettingsPromptReason] = useState<string | undefined>(undefined);
   const [codePaneOpen, setCodePaneOpen] = useState(false);
@@ -539,9 +540,9 @@ export function App() {
                 seq: (prev?.seq || 0) + 1,
               }));
             }}
-            onOpenAddWorkspace={() => setShowAddWorkspace(true)}
             onTerminalsMutated={() => void refreshData()}
             onOpenHistory={(wsId) => setHistoryWorkspaceId(wsId)}
+            onOpenAllSessions={() => setShowAllSessions(true)}
             includeFinished={includeFinished}
             onToggleIncludeFinished={() => setIncludeFinished((v) => !v)}
           />
@@ -635,15 +636,6 @@ export function App() {
         />
       )}
 
-      {showAddWorkspace && (
-        <AddWorkspaceModal
-          onClose={() => setShowAddWorkspace(false)}
-          onAdded={(ws) => {
-            void refreshData().then(() => setActiveWorkspaceId(ws.id));
-          }}
-        />
-      )}
-
       {showNewTerminal && activeWorkspace && (
         <NewTerminalModal
           workspace={activeWorkspace}
@@ -679,6 +671,17 @@ export function App() {
                 });
               }
             });
+          }}
+        />
+      )}
+
+      {showAllSessions && (
+        <SessionsDrawer
+          workspaces={workspaces}
+          onClose={() => setShowAllSessions(false)}
+          onOpenSpace={(wsId) => {
+            setShowAllSessions(false);
+            setHistoryWorkspaceId(wsId);
           }}
         />
       )}

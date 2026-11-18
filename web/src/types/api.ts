@@ -57,6 +57,8 @@ export interface Workspace {
   auto: boolean;
   /** Set when the row is a Herdr.app space (herdr.space terminal label) rather than a directory pin. */
   space_id?: string;
+  /** A space this workbench has seen before but the app no longer publishes. */
+  closed?: boolean;
   terminals: TerminalInfo[];
   counts: WorkspaceCounts;
   updated_ms: number;
@@ -103,6 +105,9 @@ export interface SessionInfo {
   exit_code?: number | null;
   resume_argv: string[];
   resume_note?: string;
+  /** Which space the conversation belongs to — set by the all-spaces listing. */
+  workspace_id?: string;
+  workspace_name?: string;
 }
 
 export interface TerminalOutput {
