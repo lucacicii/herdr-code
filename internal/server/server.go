@@ -180,8 +180,8 @@ func (s *Server) registerRoutes() {
 
 	// Local directory picker helper
 	s.mux.HandleFunc("GET /api/fs/browse", s.authJSON(s.handleBrowseLocalDirs))
-	// Terminal links can point outside the workspace root.
-	s.mux.HandleFunc("GET /api/fs/file", s.authJSON(s.handleLocalFile))
+	// Terminal links hand a path to the operating system.
+	s.mux.HandleFunc("POST /api/fs/reveal", s.authJSON(s.handleRevealPath))
 
 	// Workspace files & search
 	s.mux.HandleFunc("GET /api/workspaces/{id}/tree", s.authJSON(s.handleWorkspaceTree))
@@ -500,8 +500,15 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, file)
 }
 
-func (s *Server) handleLocalFile(w http.ResponseWriter, r *http.Request) {
-	raw := strings.TrimSpace(r.URL.Query().Get("path"))
+func (s *Server) handleRevealPath(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	raw := strings.TrimSpace(body.Path)
 	if raw == "" {
 		writeJSONError(w, http.StatusBadRequest, errors.New("path required"))
 		return
@@ -511,12 +518,15 @@ func (s *Server) handleLocalFile(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}
-	file, err := appfs.ReadFileAt(abs, raw)
-	if err != nil {
+	if _, err := os.Stat(abs); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, file)
+	if err := revealInOS(abs); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": abs})
 }
 
 func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {

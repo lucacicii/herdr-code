@@ -23,7 +23,7 @@ interface RightTerminalPaneProps {
   terminalFont: TerminalFontConfig;
   onFocusedTerminalChange?: (address: string | null) => void;
   onAddPathChip: (path: string) => void;
-  onOpenFileLine: (path: string, line?: number) => void;
+  onOpenPath: (path: string) => void;
   onOpenNewTerminal: () => void;
   onTerminalsMutated: () => void;
 }
@@ -40,7 +40,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
       terminalFont,
       onFocusedTerminalChange,
       onAddPathChip,
-      onOpenFileLine,
+      onOpenPath,
       onOpenNewTerminal,
       onTerminalsMutated,
     },
@@ -422,7 +422,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
                   lineHeight={terminalFont.lineHeight}
                   focused={!splitMode || focusedSlot === 0}
                   onFocus={() => setFocusedSlot(0)}
-                  onOpenFileLine={onOpenFileLine}
+                  onOpenPath={onOpenPath}
                   onPastePath={onAddPathChip}
                 />
               </div>
@@ -491,7 +491,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
                     lineHeight={terminalFont.lineHeight}
                     focused={focusedSlot === 1}
                     onFocus={() => setFocusedSlot(1)}
-                    onOpenFileLine={onOpenFileLine}
+                    onOpenPath={onOpenPath}
                     onPastePath={onAddPathChip}
                   />
                 </div>

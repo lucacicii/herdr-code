@@ -360,10 +360,7 @@ export function App() {
 
   const openFile = useCallback(
     async (path: string, line?: number) => {
-      // Terminal links may point outside the workspace (absolute or ~), which the
-      // server reads directly instead of resolving against the workspace root.
-      const outside = path.startsWith('/') || path.startsWith('~');
-      if (!activeWorkspaceId && !outside) return;
+      if (!activeWorkspaceId) return;
       const tabId = `code:${path}`;
       setTabs((prev) => {
         const existing = prev.find((t) => t.id === tabId);
@@ -383,15 +380,32 @@ export function App() {
       setCodePaneOpen(true);
 
       try {
-        const fc = outside
-          ? await api.readFileAt(path)
-          : await api.readFile(activeWorkspaceId as string, path);
+        const fc = await api.readFile(activeWorkspaceId, path);
         setFilesByPath((prev) => ({ ...prev, [path]: fc }));
       } catch {
         // ignore unreadable path (e.g. broken terminal link)
       }
     },
     [activeWorkspaceId]
+  );
+
+  // Terminal links go to the desktop instead of the code pane: Finder selects the file
+  // (or opens the folder), so relative paths are resolved against the workspace first.
+  const openInOS = useCallback(
+    async (path: string) => {
+      const resolved =
+        path.startsWith('/') || path.startsWith('~')
+          ? path
+          : activeWorkspace?.path
+            ? `${activeWorkspace.path}/${path.replace(/^\.\//, '')}`
+            : path;
+      try {
+        await api.revealPath(resolved);
+      } catch {
+        // ignore unreadable path (e.g. broken terminal link)
+      }
+    },
+    [activeWorkspace?.path]
   );
 
   const openDiff = useCallback(
@@ -565,7 +579,7 @@ export function App() {
             terminalFont={terminalFont}
             onFocusedTerminalChange={setFocusedTerminalAddress}
             onAddPathChip={addFileRef}
-            onOpenFileLine={(p, line) => void openFile(p, line)}
+            onOpenPath={(p) => void openInOS(p)}
             onOpenNewTerminal={() => setShowNewTerminal(true)}
             onTerminalsMutated={() => void refreshData()}
           />

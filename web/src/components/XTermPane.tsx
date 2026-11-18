@@ -20,7 +20,7 @@ interface XTermPaneProps {
   lineHeight: number;
   focused: boolean;
   onFocus: () => void;
-  onOpenFileLine: (path: string, line?: number) => void;
+  onOpenPath: (path: string) => void;
   onPastePath: (path: string) => void;
 }
 
@@ -106,7 +106,7 @@ function adoptRemoteSize(
 }
 
 export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XTermPane(
-  { terminal, theme, fontFamily, fontSize, lineHeight, focused, onFocus, onOpenFileLine, onPastePath },
+  { terminal, theme, fontFamily, fontSize, lineHeight, focused, onFocus, onOpenPath, onPastePath },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -117,8 +117,8 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
   const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connState, setConnState] = useState<'connecting' | 'open' | 'closed'>('connecting');
   const [dragOver, setDragOver] = useState(false);
-  const onOpenFileLineRef = useRef(onOpenFileLine);
-  onOpenFileLineRef.current = onOpenFileLine;
+  const onOpenPathRef = useRef(onOpenPath);
+  onOpenPathRef.current = onOpenPath;
 
   useImperativeHandle(ref, () => ({
     pasteText(text: string, submit = false) {
@@ -199,7 +199,7 @@ export const XTermPane = forwardRef<XTermPaneHandle, XTermPaneProps>(function XT
 
     const fileLinkDisp = term.registerLinkProvider(
       createFileLinkProvider(term, (target) => {
-        onOpenFileLineRef.current(target.path, target.line);
+        onOpenPathRef.current(target.path);
       })
     );
 

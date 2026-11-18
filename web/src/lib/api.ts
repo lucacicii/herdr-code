@@ -124,9 +124,12 @@ export const api = {
       `/api/workspaces/${encodeURIComponent(wsId)}/file?path=${encodeURIComponent(path)}`
     ),
 
-  // Absolute (or ~-relative) path, used by terminal links that leave the workspace.
-  readFileAt: (path: string) =>
-    req<FileContent>(`/api/fs/file?path=${encodeURIComponent(path)}`),
+  // Hands a path to the desktop: Finder selects the file, other OSes open its folder.
+  revealPath: (path: string) =>
+    req<{ ok: boolean; path: string }>('/api/fs/reveal', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
 
   gitStatus: (wsId: string) =>
     req<RepoStatus>(`/api/workspaces/${encodeURIComponent(wsId)}/git/status`),
