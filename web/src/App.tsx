@@ -18,10 +18,7 @@ import {
 } from './lib/terminalFont';
 import type {
   CenterTab,
-  DiffHunk,
-  DiffMode,
   FileContent,
-  FileDiff,
   HerdrSpace,
   RepoStatus,
   TerminalInfo,
@@ -73,12 +70,6 @@ export function App() {
   const [tabs, setTabs] = useState<CenterTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [filesByPath, setFilesByPath] = useState<Record<string, FileContent>>({});
-
-  const [diffMode, setDiffMode] = useState<DiffMode>('working');
-  const [diffTarget, setDiffTarget] = useState('');
-  const [activeDiffPath, setActiveDiffPath] = useState<string | null>(null);
-  const [activeDiff, setActiveDiff] = useState<FileDiff | null>(null);
-  const [loadingDiff, setLoadingDiff] = useState(false);
 
   const terminalPaneRef = useRef<RightTerminalPaneHandle>(null);
 
@@ -265,8 +256,6 @@ export function App() {
       setTabs([]);
       setActiveTabId(null);
       setFilesByPath({});
-      setActiveDiff(null);
-      setActiveDiffPath(null);
     }
     prevWsRef.current = activeWorkspaceId;
     void api.watchWorkspace(activeWorkspaceId).catch(() => {});
@@ -408,45 +397,6 @@ export function App() {
     [activeWorkspace?.path]
   );
 
-  const openDiff = useCallback(
-    async (path: string, mode: DiffMode, target: string) => {
-      if (!activeWorkspaceId) return;
-      setDiffMode(mode);
-      setDiffTarget(target);
-      setActiveDiffPath(path);
-      setTabs((prev) => {
-        const existing = prev.find((t) => t.id === 'diff');
-        if (existing) {
-          return prev.map((t) => (t.id === 'diff' ? { id: 'diff', kind: 'diff', path, mode, target } : t));
-        }
-        return [...prev, { id: 'diff', kind: 'diff', path, mode, target }];
-      });
-      setActiveTabId('diff');
-      setCodePaneOpen(true);
-      setLoadingDiff(true);
-      try {
-        const d = await api.gitDiff(activeWorkspaceId, mode, target, path);
-        setActiveDiff(d);
-      } catch {
-        setActiveDiff(null);
-      } finally {
-        setLoadingDiff(false);
-      }
-    },
-    [activeWorkspaceId]
-  );
-
-  const handleGitMutated = useCallback(() => {
-    setRefreshSignal((n) => n + 1);
-    void refreshGit();
-    if (activeDiffPath && activeWorkspaceId) {
-      void api
-        .gitDiff(activeWorkspaceId, diffMode, diffTarget, activeDiffPath)
-        .then(setActiveDiff)
-        .catch(() => setActiveDiff(null));
-    }
-  }, [activeDiffPath, activeWorkspaceId, diffMode, diffTarget, refreshGit]);
-
   const pasteIntoFocusedTerminal = useCallback((text: string) => {
     terminalPaneRef.current?.pasteText(text);
   }, []);
@@ -468,10 +418,6 @@ export function App() {
   ) => {
     const anchor = formatLineAnchor(path, startLine, endLine);
     pasteIntoFocusedTerminal(`${anchor}\n\`\`\`${language || ''}\n${snippet}\n\`\`\`\n`);
-  };
-
-  const addHunkRef = (path: string, hunk: DiffHunk) => {
-    pasteIntoFocusedTerminal(`@${path} (diff hunk)\n\`\`\`diff\n${hunk.patch}\n\`\`\`\n`);
   };
 
   const addReviewComment = (path: string, startLine: number, endLine: number, text: string) => {
@@ -600,8 +546,6 @@ export function App() {
                 tabs={tabs}
                 activeTabId={activeTabId}
                 filesByPath={filesByPath}
-                activeDiff={activeDiff}
-                loadingDiff={loadingDiff}
                 theme={theme}
                 onSelectTab={setActiveTabId}
                 onCloseTab={(id) => {
@@ -621,9 +565,7 @@ export function App() {
                 onAddFileRef={addFileRef}
                 onAddLineRef={addLineRef}
                 onAddSnippetRef={addSnippetRef}
-                onAddHunkRef={addHunkRef}
                 onAddReviewComment={addReviewComment}
-                onGitMutated={handleGitMutated}
               />
             </aside>
           </>
@@ -634,18 +576,9 @@ export function App() {
         workspace={activeWorkspace}
         repoStatus={repoStatus}
         activeFilePath={activeFilePath}
-        diffMode={diffMode}
-        diffTarget={diffTarget}
-        activeDiffPath={activeDiffPath}
         refreshSignal={refreshSignal}
         onOpenFile={(p) => void openFile(p)}
-        onOpenDiff={(p, m, t) => void openDiff(p, m, t)}
-        onChangeDiffParams={(m, t) => {
-          setDiffMode(m);
-          setDiffTarget(t);
-        }}
         onInsertReferencePath={addFileRef}
-        onGitMutated={handleGitMutated}
         onOpenQuickSearch={() => setShowQuickOpen(true)}
       />
 

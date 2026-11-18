@@ -17,7 +17,7 @@ func runCmd(t *testing.T, dir string, name string, args ...string) {
 	}
 }
 
-func TestGitStatusDiffAndHunk(t *testing.T) {
+func TestGitStatus(t *testing.T) {
 	dir := t.TempDir()
 	runCmd(t, dir, "git", "init")
 	runCmd(t, dir, "git", "config", "user.email", "test@example.com")
@@ -37,34 +37,22 @@ func TestGitStatusDiffAndHunk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
-	st, err := GetStatus(ctx, dir)
+	st, err := GetStatus(context.Background(), dir)
 	if err != nil || !st.IsRepo || len(st.Files) != 2 {
 		t.Fatalf("unexpected git status: %+v err=%v", st, err)
 	}
-
-	diff, err := GetFileDiff(ctx, dir, "working", "", "app.txt")
-	if err != nil || len(diff.Hunks) != 1 {
-		t.Fatalf("expected 1 hunk, got %+v err=%v", diff, err)
-	}
-	if diff.OriginalContent == diff.ModifiedContent {
-		t.Fatalf("expected different original and modified content")
-	}
-
-	if err := ApplyHunk(ctx, dir, diff.Hunks[0].Patch, "stage"); err != nil {
-		t.Fatalf("ApplyHunk stage failed: %v", err)
-	}
-	st2, err := GetStatus(ctx, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stagedFound bool
-	for _, f := range st2.Files {
-		if f.Path == "app.txt" && f.Staged && !f.Unstaged {
-			stagedFound = true
+	for _, f := range st.Files {
+		switch f.Path {
+		case "app.txt":
+			if !f.Unstaged || f.Staged {
+				t.Fatalf("expected app.txt unstaged: %+v", f)
+			}
+		case "new.txt":
+			if !f.Untracked {
+				t.Fatalf("expected new.txt untracked: %+v", f)
+			}
+		default:
+			t.Fatalf("unexpected file: %+v", f)
 		}
-	}
-	if !stagedFound {
-		t.Fatalf("expected app.txt to be staged cleanly: %+v", st2.Files)
 	}
 }

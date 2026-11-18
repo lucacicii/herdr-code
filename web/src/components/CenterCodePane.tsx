@@ -1,15 +1,12 @@
-import { AtSign, FileCode2, GitCompare, PanelRightClose, Search, X } from 'lucide-react';
+import { AtSign, FileCode2, PanelRightClose, Search, X } from 'lucide-react';
 import { CodeMirrorViewer } from './CodeMirrorViewer';
-import { DiffViewer } from './DiffViewer';
-import type { CenterTab, DiffHunk, FileContent, FileDiff } from '../types/api';
+import type { CenterTab, FileContent } from '../types/api';
 
 interface CenterCodePaneProps {
   workspaceId: string | null;
   tabs: CenterTab[];
   activeTabId: string | null;
   filesByPath: Record<string, FileContent>;
-  activeDiff: FileDiff | null;
-  loadingDiff: boolean;
   theme: 'light' | 'dark';
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
@@ -24,9 +21,7 @@ interface CenterCodePaneProps {
     snippet: string,
     language: string
   ) => void;
-  onAddHunkRef: (path: string, hunk: DiffHunk) => void;
   onAddReviewComment: (path: string, startLine: number, endLine: number, text: string) => void;
-  onGitMutated: () => void;
 }
 
 export function CenterCodePane({
@@ -34,8 +29,6 @@ export function CenterCodePane({
   tabs,
   activeTabId,
   filesByPath,
-  activeDiff,
-  loadingDiff,
   theme,
   onSelectTab,
   onCloseTab,
@@ -44,9 +37,7 @@ export function CenterCodePane({
   onAddFileRef,
   onAddLineRef,
   onAddSnippetRef,
-  onAddHunkRef,
   onAddReviewComment,
-  onGitMutated,
 }: CenterCodePaneProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
@@ -77,15 +68,12 @@ export function CenterCodePane({
         >
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
-            const label =
-              tab.kind === 'diff'
-                ? `Diff: ${tab.path || tab.mode}`
-                : tab.path.split('/').pop() || tab.path;
+            const label = tab.path.split('/').pop() || tab.path;
             return (
               <div
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                title={tab.kind === 'code' ? tab.path : `Diff ${tab.path || ''}`}
+                title={tab.path}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -101,7 +89,7 @@ export function CenterCodePane({
                   flexShrink: 0,
                 }}
               >
-                {tab.kind === 'diff' ? <GitCompare size={12} /> : <FileCode2 size={12} />}
+                <FileCode2 size={12} />
                 <span>{label}</span>
                 <button
                   className="btn btn-ghost btn-icon"
@@ -119,7 +107,7 @@ export function CenterCodePane({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-          {activeTab && activeTab.kind === 'code' && (
+          {activeTab && (
             <button
               className="btn btn-sm"
               onClick={() => onAddFileRef(activeTab.path)}
@@ -161,8 +149,7 @@ export function CenterCodePane({
             <span>Find File</span>
           </button>
         </div>
-      ) : activeTab.kind === 'code' ? (
-        filesByPath[activeTab.path] ? (
+      ) : filesByPath[activeTab.path] ? (
           <CodeMirrorViewer
             file={filesByPath[activeTab.path]}
             theme={theme}
@@ -175,19 +162,7 @@ export function CenterCodePane({
         ) : (
           <div style={{ padding: 24, color: 'var(--text-secondary)' }}>Loading file...</div>
         )
-      ) : (
-        workspaceId && (
-          <DiffViewer
-            workspaceId={workspaceId}
-            diff={activeDiff}
-            loading={loadingDiff}
-            theme={theme}
-            onAddHunkRef={onAddHunkRef}
-            onAddReviewComment={onAddReviewComment}
-            onGitMutated={onGitMutated}
-          />
-        )
-      )}
+      }
     </div>
   );
 }

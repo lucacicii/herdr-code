@@ -1,8 +1,5 @@
 import type {
-  ChangedFile,
-  DiffMode,
   FileContent,
-  FileDiff,
   RepoStatus,
   SearchMatch,
   SessionInfo,
@@ -133,40 +130,6 @@ export const api = {
 
   gitStatus: (wsId: string) =>
     req<RepoStatus>(`/api/workspaces/${encodeURIComponent(wsId)}/git/status`),
-
-  gitDiffFiles: (wsId: string, mode: DiffMode, target = '') =>
-    req<{ files: ChangedFile[] }>(
-      `/api/workspaces/${encodeURIComponent(wsId)}/git/diff-files?mode=${encodeURIComponent(mode)}&target=${encodeURIComponent(target)}`
-    ),
-
-  gitDiff: (wsId: string, mode: DiffMode, target: string, path: string) =>
-    req<FileDiff>(
-      `/api/workspaces/${encodeURIComponent(wsId)}/git/diff?mode=${encodeURIComponent(mode)}&target=${encodeURIComponent(target)}&path=${encodeURIComponent(path)}`
-    ),
-
-  gitStage: (wsId: string, path: string) =>
-    req<{ ok: boolean }>(`/api/workspaces/${encodeURIComponent(wsId)}/git/stage`, {
-      method: 'POST',
-      body: JSON.stringify({ path }),
-    }),
-
-  gitUnstage: (wsId: string, path: string) =>
-    req<{ ok: boolean }>(`/api/workspaces/${encodeURIComponent(wsId)}/git/unstage`, {
-      method: 'POST',
-      body: JSON.stringify({ path }),
-    }),
-
-  gitDiscard: (wsId: string, path: string) =>
-    req<{ ok: boolean }>(`/api/workspaces/${encodeURIComponent(wsId)}/git/discard`, {
-      method: 'POST',
-      body: JSON.stringify({ path }),
-    }),
-
-  gitHunk: (wsId: string, patch: string, action: 'stage' | 'unstage' | 'discard') =>
-    req<{ ok: boolean }>(`/api/workspaces/${encodeURIComponent(wsId)}/git/hunk`, {
-      method: 'POST',
-      body: JSON.stringify({ patch, action }),
-    }),
 
   listTemplates: () => req<{ templates: TemplateInfo[] }>('/api/templates'),
 

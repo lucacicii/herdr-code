@@ -18,9 +18,6 @@ export function formatChipText(chip: ReferenceChip): string {
     const lang = chip.language || '';
     return `${anchor}\n\`\`\`${lang}\n${chip.snippet || ''}\n\`\`\``;
   }
-  if (chip.kind === 'hunk') {
-    return `@${chip.path} (diff hunk)\n\`\`\`diff\n${chip.snippet || ''}\n\`\`\``;
-  }
   if (chip.kind === 'review' && chip.comments && chip.comments.length > 0) {
     return formatReviewComments(chip.comments);
   }

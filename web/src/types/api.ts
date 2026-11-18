@@ -193,35 +193,6 @@ export interface RepoStatus {
   recent_commits: CommitInfo[];
 }
 
-export type DiffMode = 'working' | 'staged' | 'unstaged' | 'branch' | 'commit';
-
-export interface ChangedFile {
-  path: string;
-  status: string;
-}
-
-export interface DiffHunk {
-  id: string;
-  header: string;
-  old_start: number;
-  old_lines: number;
-  new_start: number;
-  new_lines: number;
-  patch: string;
-  lines: string[];
-}
-
-export interface FileDiff {
-  path: string;
-  mode: DiffMode;
-  target?: string;
-  original_content: string;
-  modified_content: string;
-  unified_diff: string;
-  hunks: DiffHunk[];
-  is_binary: boolean;
-}
-
 export interface TemplateInfo {
   name: string;
   description?: string;
@@ -230,7 +201,7 @@ export interface TemplateInfo {
 
 export interface ReferenceChip {
   id: string;
-  kind: 'path' | 'lines' | 'snippet' | 'hunk' | 'review';
+  kind: 'path' | 'lines' | 'snippet' | 'review';
   label: string;
   path: string;
   startLine?: number;
@@ -248,18 +219,10 @@ export interface ReviewComment {
   text: string;
 }
 
-export type CenterTab =
-  | {
-      id: string;
-      kind: 'code';
-      path: string;
-      highlightStart?: number;
-      highlightEnd?: number;
-    }
-  | {
-      id: 'diff';
-      kind: 'diff';
-      path?: string;
-      mode: DiffMode;
-      target?: string;
-    };
+export interface CenterTab {
+  id: string;
+  kind: 'code';
+  path: string;
+  highlightStart?: number;
+  highlightEnd?: number;
+}

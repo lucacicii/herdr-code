@@ -190,12 +190,6 @@ func (s *Server) registerRoutes() {
 
 	// Workspace git
 	s.mux.HandleFunc("GET /api/workspaces/{id}/git/status", s.authJSON(s.handleGitStatus))
-	s.mux.HandleFunc("GET /api/workspaces/{id}/git/diff-files", s.authJSON(s.handleGitDiffFiles))
-	s.mux.HandleFunc("GET /api/workspaces/{id}/git/diff", s.authJSON(s.handleGitDiff))
-	s.mux.HandleFunc("POST /api/workspaces/{id}/git/stage", s.authJSON(s.handleGitStage))
-	s.mux.HandleFunc("POST /api/workspaces/{id}/git/unstage", s.authJSON(s.handleGitUnstage))
-	s.mux.HandleFunc("POST /api/workspaces/{id}/git/discard", s.authJSON(s.handleGitDiscard))
-	s.mux.HandleFunc("POST /api/workspaces/{id}/git/hunk", s.authJSON(s.handleGitHunk))
 
 	// Terminals & templates
 	s.mux.HandleFunc("GET /api/herdr/spaces", s.authJSON(s.handleHerdrSpaces))
@@ -542,96 +536,6 @@ func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
-}
-
-func (s *Server) handleGitDiffFiles(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	ws, err := s.workspaces.ResolveWorkspace(r.Context(), id)
-	if err != nil {
-		writeJSONError(w, http.StatusNotFound, err)
-		return
-	}
-	mode := r.URL.Query().Get("mode")
-	target := r.URL.Query().Get("target")
-	files, err := appgit.ListChangedFiles(r.Context(), ws.Path, mode, target)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"files": files})
-}
-
-func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	ws, err := s.workspaces.ResolveWorkspace(r.Context(), id)
-	if err != nil {
-		writeJSONError(w, http.StatusNotFound, err)
-		return
-	}
-	mode := r.URL.Query().Get("mode")
-	target := r.URL.Query().Get("target")
-	relPath := r.URL.Query().Get("path")
-	diff, err := appgit.GetFileDiff(r.Context(), ws.Path, mode, target, relPath)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, diff)
-}
-
-func (s *Server) handleGitStage(w http.ResponseWriter, r *http.Request) {
-	s.handleGitFileAction(w, r, appgit.StageFile)
-}
-
-func (s *Server) handleGitUnstage(w http.ResponseWriter, r *http.Request) {
-	s.handleGitFileAction(w, r, appgit.UnstageFile)
-}
-
-func (s *Server) handleGitDiscard(w http.ResponseWriter, r *http.Request) {
-	s.handleGitFileAction(w, r, appgit.DiscardFile)
-}
-
-func (s *Server) handleGitFileAction(w http.ResponseWriter, r *http.Request, fn func(context.Context, string, string) error) {
-	id := r.PathValue("id")
-	ws, err := s.workspaces.ResolveWorkspace(r.Context(), id)
-	if err != nil {
-		writeJSONError(w, http.StatusNotFound, err)
-		return
-	}
-	var body struct {
-		Path string `json:"path"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := fn(r.Context(), ws.Path, body.Path); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (s *Server) handleGitHunk(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	ws, err := s.workspaces.ResolveWorkspace(r.Context(), id)
-	if err != nil {
-		writeJSONError(w, http.StatusNotFound, err)
-		return
-	}
-	var body struct {
-		Patch  string `json:"patch"`
-		Action string `json:"action"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := appgit.ApplyHunk(r.Context(), ws.Path, body.Patch, body.Action); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
