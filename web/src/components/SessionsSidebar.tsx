@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
+  FolderPlus,
   GitBranch,
   History,
   Layers,
@@ -32,6 +33,8 @@ interface SessionsSidebarProps {
   onOpenHistory: (wsId: string) => void;
   // Every space's conversations at once, filterable by space.
   onOpenAllSessions: () => void;
+  // Makes a new Herdr space (name + folder) and selects it.
+  onOpenNewSpace: () => void;
   includeFinished: boolean;
   onToggleIncludeFinished: () => void;
 }
@@ -190,6 +193,7 @@ export function SessionsSidebar({
   onTerminalsMutated,
   onOpenHistory,
   onOpenAllSessions,
+  onOpenNewSpace,
   includeFinished,
   onToggleIncludeFinished,
 }: SessionsSidebarProps) {
@@ -846,6 +850,14 @@ export function SessionsSidebar({
               onClick={onTerminalsMutated}
             >
               <RefreshCw size={12} />
+            </button>
+            <button
+              className="btn btn-ghost btn-icon"
+              style={{ width: 20, height: 20 }}
+              title="New space"
+              onClick={onOpenNewSpace}
+            >
+              <FolderPlus size={12} />
             </button>
           </div>
         </div>

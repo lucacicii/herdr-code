@@ -119,6 +119,26 @@ func (c *Client) Do(ctx context.Context, command string, args map[string]string)
 	return result, nil
 }
 
+// Create makes a space in the app, named and rooted where asked, with one shell in
+// it. It returns the new space id.
+func (c *Client) Create(ctx context.Context, name, folder string) (string, error) {
+	args := map[string]string{"folder": folder}
+	if name != "" {
+		args["name"] = name
+	}
+	// focus=false: the workbench selects the row itself, the app window stays put.
+	args["focus"] = "false"
+	result, err := c.Do(ctx, "space.new", args)
+	if err != nil {
+		return "", err
+	}
+	id, _ := result["space"].(string)
+	if id == "" {
+		return "", errors.New("herdr-app space.new returned no space id")
+	}
+	return id, nil
+}
+
 // Rename renames a space. An empty name asks the app to name it after where its
 // first terminal is again, which is how a space gets back to a derived name.
 //

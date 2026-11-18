@@ -8,6 +8,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SessionsSidebar } from './components/SessionsSidebar';
 import { SpaceHistoryDrawer } from './components/SpaceHistoryDrawer';
 import { SessionsDrawer } from './components/SessionsDrawer';
+import { NewSpaceModal } from './components/NewSpaceModal';
 import { TopBar } from './components/TopBar';
 import { api, initTokenFromEnv, setAuthToken, wsUrl } from './lib/api';
 import { formatLineAnchor } from './lib/references';
@@ -87,6 +88,7 @@ export function App() {
   const [historyWorkspaceId, setHistoryWorkspaceId] = useState<string | null>(null);
   // Every space's conversations in one list, reached from the sessions header.
   const [showAllSessions, setShowAllSessions] = useState(false);
+  const [showNewSpace, setShowNewSpace] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPromptReason, setSettingsPromptReason] = useState<string | undefined>(undefined);
   const [codePaneOpen, setCodePaneOpen] = useState(false);
@@ -543,6 +545,7 @@ export function App() {
             onTerminalsMutated={() => void refreshData()}
             onOpenHistory={(wsId) => setHistoryWorkspaceId(wsId)}
             onOpenAllSessions={() => setShowAllSessions(true)}
+            onOpenNewSpace={() => setShowNewSpace(true)}
             includeFinished={includeFinished}
             onToggleIncludeFinished={() => setIncludeFinished((v) => !v)}
           />
@@ -670,6 +673,23 @@ export function App() {
                   seq: Date.now(),
                 });
               }
+            });
+          }}
+        />
+      )}
+
+      {showNewSpace && (
+        <NewSpaceModal
+          defaultFolder={activeWorkspace?.path ?? null}
+          onClose={() => setShowNewSpace(false)}
+          onCreated={(spaceId) => {
+            // The row id is a hash of the space id, so ask the server for the list
+            // and select the row that carries this space.
+            void api.listWorkspaces(includeFinished).then((res) => {
+              const row = res.workspaces.find((w) => w.space_id === spaceId);
+              void refreshData().then(() => {
+                if (row) setActiveWorkspaceId(row.id);
+              });
             });
           }}
         />

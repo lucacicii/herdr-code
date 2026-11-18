@@ -142,6 +142,13 @@ export const api = {
 
   herdrSpaces: () => req<import('../types/api').HerdrSpacesResponse>('/api/herdr/spaces'),
 
+  /** Makes a Herdr space rooted at `folder`, with one shell in it. */
+  createSpace: (name: string, folder: string) =>
+    req<{ ok: boolean; space_id: string; name: string; folder: string }>('/api/herdr/spaces', {
+      method: 'POST',
+      body: JSON.stringify({ name, folder }),
+    }),
+
   // A space name is a label the app owns; an empty name asks it to derive one
   // again from where the space's first terminal is.
   renameSpace: (spaceId: string, name: string) =>

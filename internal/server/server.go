@@ -195,7 +195,8 @@ func (s *Server) registerRoutes() {
 
 	// Terminals & templates
 	s.mux.HandleFunc("GET /api/herdr/spaces", s.authJSON(s.handleHerdrSpaces))
-	// A space name is only a label; renaming it is the app's job, not ours.
+	// Spaces belong to the app: it creates, renames and closes them, we only ask.
+	s.mux.HandleFunc("POST /api/herdr/spaces", s.authJSON(s.handleCreateSpace))
 	s.mux.HandleFunc("POST /api/herdr/spaces/{id}/rename", s.authJSON(s.handleRenameSpace))
 	s.mux.HandleFunc("GET /api/settings/dependencies", s.authJSON(s.handleGetDependencies))
 	s.mux.HandleFunc("POST /api/settings/dependencies/install", s.authJSON(s.handleInstallDependency))
@@ -861,6 +862,55 @@ func (s *Server) handleKillTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleCreateSpace makes a Herdr space: a name (optional — the app derives one from
+// the folder) and the directory its first terminal starts in.
+func (s *Server) handleCreateSpace(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name   string `json:"name"`
+		Folder string `json:"folder"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	folder := strings.TrimSpace(body.Folder)
+	if folder == "" {
+		writeJSONError(w, http.StatusBadRequest, errors.New("folder is required"))
+		return
+	}
+	if folder == "~" || strings.HasPrefix(folder, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			folder = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(folder, "~"), "/"))
+		}
+	}
+	abs, err := filepath.Abs(folder)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+		writeJSONError(w, http.StatusBadRequest, errors.New("folder does not exist: "+abs))
+		return
+	}
+	if !s.herdrApp.Available() {
+		writeJSONError(w, http.StatusNotImplemented, happ.ErrUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	spaceID, err := s.herdrApp.Create(ctx, strings.TrimSpace(body.Name), abs)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"space_id": spaceID,
+		"name":     strings.TrimSpace(body.Name),
+		"folder":   abs,
+	})
 }
 
 func (s *Server) handleRenameSpace(w http.ResponseWriter, r *http.Request) {
