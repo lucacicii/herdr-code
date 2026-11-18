@@ -504,27 +504,6 @@ export function SessionsSidebar({
     onTerminalsMutated();
   };
 
-  const closeSpace = async (ws: Workspace) => {
-    setCtxMenu(null);
-    const live = ws.terminals.filter((t) => t.state === 'live');
-    if (live.length > 0 && !window.confirm(`Close space "${ws.name}" and its ${live.length} session(s)?`)) {
-      return;
-    }
-    for (const t of live) {
-      try {
-        await api.killTerminal(t.address);
-      } catch {
-        // already gone
-      }
-    }
-    try {
-      await api.pinWorkspace(ws.id, false);
-    } catch {
-      // ignore
-    }
-    onTerminalsMutated();
-  };
-
   const renameSpace = async (ws: Workspace) => {
     setCtxMenu(null);
     if (!ws.space_id) return;
@@ -1194,12 +1173,6 @@ export function SessionsSidebar({
                 <button className="ctx-menu-item" onClick={() => void adoptSpace(ctxMenu.ws)}>
                   <PanelsTopLeft size={12} />
                   {ctxMenu.ws.space_id ? 'Add to Herdr Space' : 'Show in Herdr.app'}
-                </button>
-              )}
-              {!ctxMenu.ws.closed && (
-                <button className="ctx-menu-item danger" onClick={() => void closeSpace(ctxMenu.ws)}>
-                  <X size={12} />
-                  Close Space
                 </button>
               )}
             </>
