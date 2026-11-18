@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -781,7 +781,7 @@ export function SessionsSidebar({
             textTransform: 'uppercase',
           }}
         >
-          <span>Spaces ({workspaces.length})</span>
+          <span>Spaces ({workspaces.filter((w) => w.space_id).length})</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <button
               className={`btn btn-ghost btn-icon ${includeFinished ? 'btn-accent' : ''}`}
@@ -818,7 +818,7 @@ export function SessionsSidebar({
           style={{ flex: 1, overflowY: 'auto', padding: '0 6px 6px' }}
           onScroll={() => setCtxMenu(null)}
         >
-          {organizedSpaces.map(({ ws, isWorktree }) => {
+          {organizedSpaces.map(({ ws, isWorktree }, index) => {
             const isActive = ws.id === activeWorkspaceId;
             const firstAddr = ws.terminals[0]?.address;
             const herdrMeta = firstAddr ? tabTerminalMap.get(firstAddr) : undefined;
@@ -831,6 +831,21 @@ export function SessionsSidebar({
                 (ws.behind || 0) > 0);
 
             return (
+              <Fragment key={ws.id}>
+                {!ws.space_id && (index === 0 || !!organizedSpaces[index - 1]?.ws.space_id) && (
+                  <div
+                    style={{
+                      padding: '7px 8px 3px',
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      color: 'var(--text-muted)',
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Projects
+                  </div>
+                )}
               <div
                 key={ws.id}
                 className={`tree-row ${isActive ? 'active' : ''}`}
@@ -956,6 +971,7 @@ export function SessionsSidebar({
                   </button>
                 </div>
               </div>
+              </Fragment>
             );
           })}
         </div>
