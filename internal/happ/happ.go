@@ -126,8 +126,9 @@ func (c *Client) Create(ctx context.Context, name, folder string) (string, error
 	if name != "" {
 		args["name"] = name
 	}
-	// focus=false: the workbench selects the row itself, the app window stays put.
-	args["focus"] = "false"
+	// Let the app show the new space. Creating it in the background leaves its
+	// shell with no pane attached, and it exits — which takes the space with it.
+	args["focus"] = "true"
 	result, err := c.Do(ctx, "space.new", args)
 	if err != nil {
 		return "", err
