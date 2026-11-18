@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   GitBranch,
   Moon,
@@ -25,6 +26,12 @@ interface TopBarProps {
   onToggleTheme: () => void;
 }
 
+// A space's name says nothing about where it lives, so the top bar shows the
+// directory too; the home prefix is folded to ~ to keep it readable.
+function shortenPath(path: string): string {
+  return path.replace(/^(\/Users\/[^/]+|\/home\/[^/]+)(?=\/|$)/, '~');
+}
+
 export function TopBar({
   activeWorkspace,
   repoStatus,
@@ -38,6 +45,24 @@ export function TopBar({
   onOpenSettings,
   onToggleTheme,
 }: TopBarProps) {
+  const [copiedPath, setCopiedPath] = useState(false);
+
+  useEffect(() => {
+    if (!copiedPath) return;
+    const timer = setTimeout(() => setCopiedPath(false), 1200);
+    return () => clearTimeout(timer);
+  }, [copiedPath]);
+
+  const copyPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      setCopiedPath(true);
+    } catch {
+      // Clipboard access is refused outside a secure context; the tooltip still
+      // carries the full path.
+    }
+  };
+
   return (
     <header className="wb-topbar">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -63,6 +88,24 @@ export function TopBar({
                 }}
               >
                 {activeWorkspace.name}
+              </span>
+
+              <span
+                className="mono"
+                title={`${activeWorkspace.path} — click to copy`}
+                onClick={() => void copyPath(activeWorkspace.path)}
+                style={{
+                  fontSize: 11.5,
+                  color: copiedPath ? 'var(--text-primary)' : 'var(--text-muted)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  minWidth: 0,
+                  maxWidth: 280,
+                  cursor: 'pointer',
+                }}
+              >
+                {copiedPath ? 'copied' : shortenPath(activeWorkspace.path)}
               </span>
 
               {repoStatus?.is_repo && repoStatus.branch && (
