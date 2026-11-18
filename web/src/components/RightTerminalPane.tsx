@@ -26,6 +26,9 @@ interface RightTerminalPaneProps {
   onOpenPath: (path: string) => void;
   onOpenNewTerminal: () => void;
   onTerminalsMutated: () => void;
+  // Distinguishes "this workspace has no terminals" from "the workbench server
+  // is unreachable", which otherwise renders as the same empty pane.
+  serverOnline?: boolean;
 }
 
 export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTerminalPaneProps>(
@@ -43,6 +46,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
       onOpenPath,
       onOpenNewTerminal,
       onTerminalsMutated,
+      serverOnline = true,
     },
     ref
   ) {
@@ -360,11 +364,23 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
               }}
             >
               <TerminalIcon size={24} style={{ color: 'var(--text-muted)' }} />
-              <div style={{ fontSize: 13 }}>No terminals in this workspace</div>
-              <button className="btn btn-primary" onClick={onOpenNewTerminal}>
-                <Plus size={13} />
-                <span>Start Terminal</span>
-              </button>
+              {serverOnline ? (
+                <>
+                  <div style={{ fontSize: 13 }}>No terminals in this workspace</div>
+                  <button className="btn btn-primary" onClick={onOpenNewTerminal}>
+                    <Plus size={13} />
+                    <span>Start Terminal</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13 }}>Can't reach the herdr-code server</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 300 }}>
+                    Retrying every couple of seconds — this page reconnects on its own
+                    once the server is back.
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <>

@@ -13,6 +13,9 @@ interface TopBarProps {
   activeWorkspace: Workspace | null;
   repoStatus: RepoStatus | null;
   hcConnected: boolean;
+  // False when /api/health itself is unreachable, i.e. the herdr-code server is
+  // gone — not the hc daemon. The two look identical in the UI otherwise.
+  serverOnline: boolean;
   theme: 'light' | 'dark';
   codePaneOpen: boolean;
   codeTabCount: number;
@@ -26,6 +29,7 @@ export function TopBar({
   activeWorkspace,
   repoStatus,
   hcConnected,
+  serverOnline,
   theme,
   codePaneOpen,
   codeTabCount,
@@ -132,16 +136,26 @@ export function TopBar({
           <span>Code{codeTabCount > 0 ? ` (${codeTabCount})` : ''}</span>
         </button>
 
-        {!hcConnected && (
-          <button
+        {!serverOnline ? (
+          <span
             className="status-badge status-error"
-            style={{ border: 'none', cursor: 'pointer' }}
-            onClick={onOpenSettings}
-            title="herdr-core disconnected — click to open Settings"
+            title="Can't reach the herdr-code server — retrying every couple of seconds"
           >
             <span className="status-dot" />
-            <span>hc offline</span>
-          </button>
+            <span>server offline</span>
+          </span>
+        ) : (
+          !hcConnected && (
+            <button
+              className="status-badge status-error"
+              style={{ border: 'none', cursor: 'pointer' }}
+              onClick={onOpenSettings}
+              title="herdr-core disconnected — click to open Settings"
+            >
+              <span className="status-dot" />
+              <span>hc offline</span>
+            </button>
+          )
         )}
 
         <button
@@ -152,7 +166,7 @@ export function TopBar({
           aria-label="Open Settings"
         >
           <Settings size={14} />
-          {!hcConnected && (
+          {(!serverOnline || !hcConnected) && (
             <span
               style={{
                 position: 'absolute',

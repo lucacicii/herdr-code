@@ -47,6 +47,11 @@ export function App() {
   const [tokenInput, setTokenInput] = useState('');
 
   const [hcConnected, setHcConnected] = useState(false);
+  // Reachability of the herdr-code server itself, which is a different failure
+  // from the hc daemon being down: when the server is gone every /api call
+  // fails, and the UI would otherwise look like a workbench that simply has no
+  // spaces or terminals.
+  const [serverOnline, setServerOnline] = useState(true);
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() =>
@@ -124,6 +129,7 @@ export function App() {
   const refreshData = useCallback(async () => {
     try {
       const h = await api.health();
+      setServerOnline(true);
       setHcConnected(h.hc_connected);
 
       const [wsRes, termRes, herdrRes] = await Promise.all([
@@ -159,7 +165,14 @@ export function App() {
       const msg = err instanceof Error ? err.message : '';
       if (msg.toLowerCase().includes('unauthorized') || msg.includes('401')) {
         setAuthNeeded(true);
+        setServerOnline(true);
+        return;
       }
+      // Network error or 5xx: the workbench server is not answering. Keep the
+      // shell on screen but say so, instead of rendering empty lists that read
+      // like "you have no spaces and no terminals".
+      setServerOnline(false);
+      setHcConnected(false);
     }
   }, [includeFinished]);
 
@@ -170,6 +183,25 @@ export function App() {
   useEffect(() => {
     void refreshData();
   }, [refreshData]);
+
+  // Heartbeat. While connected it is a light /api/health probe, so losing the
+  // server flips the UI into its offline state instead of leaving stale data on
+  // screen; while offline it retries the full refresh every 2s, so the page comes
+  // back on its own once the server is running again (no manual reload).
+  useEffect(() => {
+    if (authNeeded) return;
+    const timer = setInterval(
+      () => {
+        if (serverOnline) {
+          void api.health().catch(() => setServerOnline(false));
+        } else {
+          void refreshData();
+        }
+      },
+      serverOnline ? 5000 : 2000
+    );
+    return () => clearInterval(timer);
+  }, [serverOnline, authNeeded, refreshData]);
 
   // Coalesce the hc event firehose into at most one refresh per burst window.
   const refreshDataRef = useRef(refreshData);
@@ -296,6 +328,11 @@ export function App() {
         } catch {
           // ignore
         }
+      };
+      ws.onopen = () => {
+        // A reconnect means the server is back; pull a fresh snapshot now instead
+        // of waiting for the next hc event to arrive.
+        void refreshDataRef.current();
       };
       ws.onclose = () => {
         if (!closed) {
@@ -466,6 +503,7 @@ export function App() {
         activeWorkspace={activeWorkspace}
         repoStatus={repoStatus}
         hcConnected={hcConnected}
+        serverOnline={serverOnline}
         theme={theme}
         codePaneOpen={codePaneOpen}
         codeTabCount={tabs.length}
@@ -518,6 +556,7 @@ export function App() {
             ref={terminalPaneRef}
             workspaceTerminals={activeWorkspaceLiveTerminals}
             allTerminals={allTerminals}
+            serverOnline={serverOnline}
             activeWorkspaceId={activeWorkspace?.id ?? null}
             activeWorkspacePath={activeWorkspace?.path}
             focusRequest={terminalFocusReq}
