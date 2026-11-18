@@ -5,11 +5,20 @@ import type { TemplateInfo, TerminalInfo, Workspace } from '../types/api';
 
 interface NewTerminalModalProps {
   workspace: Workspace;
+  // Where to start when the caller knows better than the space's folder (the tab the
+  // person was looking at). Falls back to the workspace path.
+  defaultCwd?: string | null;
   onClose: () => void;
   onCreated: (term: TerminalInfo) => void;
 }
 
-export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalModalProps) {
+export function NewTerminalModal({
+  workspace,
+  defaultCwd,
+  onClose,
+  onCreated,
+}: NewTerminalModalProps) {
+  const targetCwd = defaultCwd || workspace.path;
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
@@ -30,7 +39,7 @@ export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalM
     try {
       const res = await api.createTerminal({
         workspace_id: workspace.id,
-        cwd: workspace.path,
+        cwd: targetCwd,
         name: opts.name || undefined,
         line: opts.line || undefined,
         argv: opts.argv,
@@ -66,6 +75,20 @@ export function NewTerminalModal({ workspace, onClose, onCreated }: NewTerminalM
         </div>
 
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div
+            className="mono"
+            style={{
+              fontSize: 11.5,
+              color: 'var(--text-secondary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={targetCwd}
+          >
+            Starts in {targetCwd}
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             <button
               className="btn"

@@ -82,6 +82,9 @@ export function App() {
   const [showQuickOpen, setShowQuickOpen] = useState(false);
   const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const [showNewTerminal, setShowNewTerminal] = useState(false);
+  // Directory the new-terminal dialog should start in: the focused tab's own cwd
+  // when it has one, so a terminal opened from a tab lands where that tab lives.
+  const [newTerminalCwd, setNewTerminalCwd] = useState<string | null>(null);
   const [historyWorkspaceId, setHistoryWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPromptReason, setSettingsPromptReason] = useState<string | undefined>(undefined);
@@ -565,7 +568,10 @@ export function App() {
             onFocusedTerminalChange={setFocusedTerminalAddress}
             onAddPathChip={addFileRef}
             onOpenPath={(p) => void openInOS(p)}
-            onOpenNewTerminal={() => setShowNewTerminal(true)}
+            onOpenNewTerminal={(cwd) => {
+              setNewTerminalCwd(cwd ?? null);
+              setShowNewTerminal(true);
+            }}
             onTerminalsMutated={() => void refreshData()}
           />
         </section>
@@ -641,6 +647,7 @@ export function App() {
       {showNewTerminal && activeWorkspace && (
         <NewTerminalModal
           workspace={activeWorkspace}
+          defaultCwd={newTerminalCwd}
           onClose={() => setShowNewTerminal(false)}
           onCreated={(term) => {
             void refreshData().then(() => {

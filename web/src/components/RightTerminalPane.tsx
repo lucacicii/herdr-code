@@ -24,7 +24,9 @@ interface RightTerminalPaneProps {
   onFocusedTerminalChange?: (address: string | null) => void;
   onAddPathChip: (path: string) => void;
   onOpenPath: (path: string) => void;
-  onOpenNewTerminal: () => void;
+  // `cwd` lets a new terminal start where the focused tab is, like Herdr does,
+  // instead of always dropping into the space's own folder.
+  onOpenNewTerminal: (cwd?: string) => void;
   onTerminalsMutated: () => void;
   // Distinguishes "this workspace has no terminals" from "the workbench server
   // is unreachable", which otherwise renders as the same empty pane.
@@ -201,10 +203,10 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
           setSplitMode(true);
           setFocusedSlot(1);
         } catch {
-          onOpenNewTerminal();
+          onOpenNewTerminal(activeWorkspacePath);
         }
       } else {
-        onOpenNewTerminal();
+        onOpenNewTerminal(activeWorkspacePath);
       }
     };
 
@@ -300,7 +302,9 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
             <button
               className="btn btn-icon btn-sm btn-ghost"
               title="New Terminal"
-              onClick={onOpenNewTerminal}
+              onClick={() =>
+                onOpenNewTerminal(list.find((t) => t.address === primaryId)?.cwd)
+              }
               style={{ flexShrink: 0 }}
             >
               <Plus size={13} />
@@ -367,7 +371,7 @@ export const RightTerminalPane = forwardRef<RightTerminalPaneHandle, RightTermin
               {serverOnline ? (
                 <>
                   <div style={{ fontSize: 13 }}>No terminals in this workspace</div>
-                  <button className="btn btn-primary" onClick={onOpenNewTerminal}>
+                  <button className="btn btn-primary" onClick={() => onOpenNewTerminal(activeWorkspacePath)}>
                     <Plus size={13} />
                     <span>Start Terminal</span>
                   </button>
